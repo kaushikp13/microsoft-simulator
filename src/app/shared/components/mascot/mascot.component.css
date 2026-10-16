@@ -1,0 +1,29 @@
+:host {
+  display: block;
+  flex: none;
+}
+
+.mascot {
+  width: 120px;
+  margin-left: 80px;
+  margin-top: -8px;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.mascot[data-mood='happy'] {
+  transform: scale(1.05);
+}
+
+.mascot[data-mood='sad'] {
+  transform: translateY(2px);
+}
+
+.mascot-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 228 / 204;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.12));
+}
+
