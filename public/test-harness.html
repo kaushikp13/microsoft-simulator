@@ -1,152 +1,175 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Simulator Test Harnesses</title>
-    <style>
-      :root { color-scheme: light; }
-      body {
-        margin: 0;
-        font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
-        background: #f8fafc;
-        color: #0f172a;
-        padding: 40px 20px;
-        display: flex;
-        justify-content: center;
-        align-items: flex-start;
-        min-height: 100vh;
-        box-sizing: border-box;
-      }
-      .container {
-        width: 100%;
-        max-width: 640px;
-        background: white;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 32px;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
-      }
-      header {
-        margin-bottom: 24px;
-        border-bottom: 1px solid #e2e8f0;
-        padding-bottom: 16px;
-      }
-      .badge {
-        display: inline-block;
-        background: #e2e8f0;
-        color: #475569;
-        font-size: 11px;
-        font-weight: 600;
-        padding: 2px 8px;
-        border-radius: 4px;
-        margin-bottom: 8px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-      }
-      h1 {
-        margin: 0 0 8px;
-        font-size: 22px;
-        color: #1e293b;
-      }
-      p.subtitle {
-        margin: 0;
-        font-size: 14px;
-        color: #64748b;
-      }
-      .links-grid {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-        margin-top: 24px;
-      }
-      .card-link {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 18px 20px;
-        border-radius: 8px;
-        border: 1px solid #e2e8f0;
-        text-decoration: none;
-        color: inherit;
-        background: #ffffff;
-        transition: all 0.15s ease-in-out;
-      }
-      .card-link:hover {
-        border-color: #cbd5e1;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
-        transform: translateY(-1px);
-      }
-      .card-link.word:hover {
-        border-color: #185abd;
-      }
-      .card-link.excel:hover {
-        border-color: #107c41;
-      }
-      .card-info {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-      }
-      .card-title {
-        font-size: 16px;
-        font-weight: 600;
-        color: #1e293b;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-      .card-desc {
-        font-size: 13px;
-        color: #64748b;
-      }
-      .tag {
-        font-size: 11px;
-        font-weight: 600;
-        padding: 2px 6px;
-        border-radius: 4px;
-      }
-      .tag-word {
-        background: #eff6ff;
-        color: #185abd;
-        border: 1px solid #bfdbfe;
-      }
-      .tag-excel {
-        background: #f0fdf4;
-        color: #107c41;
-        border: 1px solid #bbf7d0;
-      }
-      .arrow {
-        font-size: 18px;
-        color: #94a3b8;
-        font-weight: 600;
-      }
-      .card-link:hover .arrow {
-        color: #1e293b;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <header>
-        <span class="badge">Developer / QA Test Hub</span>
-        <h1>Simulator Test Harnesses</h1>
-        <p class="subtitle">Select a test harness to preview and test the interactive simulator activities.</p>
-      </header>
 
-      <div class="links-grid">
-        <a class="card-link word" href="./word-test-harness.html">
-          <div class="card-info">
-            <span class="card-title">
-              <span class="tag tag-word">Word</span>
-              Word Simulator &mdash; Test Harness
-            </span>
-            <span class="card-desc">Interactive test harness for Microsoft Word activities (14 lessons)</span>
-          </div>
-          <span class="arrow">&rarr;</span>
-        </a>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Simulator Test Harnesses</title>
+  <style>
+    :root {
+      color-scheme: light;
+    }
 
-        <a class="card-link excel" href="./excel-test-harness.html">
+    body {
+      margin: 0;
+      font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+      padding: 40px 20px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 640px;
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 32px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+    }
+
+    header {
+      margin-bottom: 24px;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 16px;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #e2e8f0;
+      color: #475569;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 22px;
+      color: #1e293b;
+    }
+
+    p.subtitle {
+      margin: 0;
+      font-size: 14px;
+      color: #64748b;
+    }
+
+    .links-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-top: 24px;
+    }
+
+    .card-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 20px;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      text-decoration: none;
+      color: inherit;
+      background: #ffffff;
+      transition: all 0.15s ease-in-out;
+    }
+
+    .card-link:hover {
+      border-color: #cbd5e1;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+      transform: translateY(-1px);
+    }
+
+    .card-link.word:hover {
+      border-color: #185abd;
+    }
+
+    .card-link.excel:hover {
+      border-color: #107c41;
+    }
+
+    .card-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1e293b;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-desc {
+      font-size: 13px;
+      color: #64748b;
+    }
+
+    .tag {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .tag-word {
+      background: #eff6ff;
+      color: #185abd;
+      border: 1px solid #bfdbfe;
+    }
+
+    .tag-excel {
+      background: #f0fdf4;
+      color: #107c41;
+      border: 1px solid #bbf7d0;
+    }
+
+    .arrow {
+      font-size: 18px;
+      color: #94a3b8;
+      font-weight: 600;
+    }
+
+    .card-link:hover .arrow {
+      color: #1e293b;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <span class="badge">Developer / QA Test Hub</span>
+      <h1>Simulator Test Harnesses</h1>
+      <p class="subtitle">Select a test harness to preview and test the interactive simulator activities.</p>
+    </header>
+
+    <div class="links-grid">
+      <a class="card-link word" href="./word-test-harness.html">
+        <div class="card-info">
+          <span class="card-title">
+            <span class="tag tag-word">Word</span>
+            Word Simulator &mdash; Test Harness
+          </span>
+          <span class="card-desc">Interactive test harness for Microsoft Word activities (14 lessons)</span>
+        </div>
+        <span class="arrow">&rarr;</span>
+      </a>
+
+      <!-- <a class="card-link excel" href="./excel-test-harness.html">
           <div class="card-info">
             <span class="card-title">
               <span class="tag tag-excel">Excel</span>
@@ -155,8 +178,9 @@
             <span class="card-desc">Interactive test harness for Microsoft Excel activities (13 lessons)</span>
           </div>
           <span class="arrow">&rarr;</span>
-        </a>
-      </div>
+        </a> -->
     </div>
-  </body>
+  </div>
+</body>
+
 </html>

@@ -37,6 +37,7 @@
             <!-- Scaler container for coherent, responsive scaling -->
             <div
               class="replica-scaler"
+              inert
               [style.transform]="scaleTransform()"
               [style.width]="scalerWidth()"
               [style.height]="scalerHeight()"
@@ -57,165 +58,31 @@
                     </div>
                   </div>
 
-                  <!-- Word Ribbon Tabs -->
-                  <div class="replica-ribbon-tabs">
-                    <span class="rw-tab disabled">File</span>
-                    <span class="rw-tab" data-demo-target="tab-home" [class.active]="replicaActiveTab() === 'home'" (click)="setReplicaTab('home')">Home</span>
-                    <span class="rw-tab" data-demo-target="tab-insert" [class.active]="replicaActiveTab() === 'insert'" (click)="setReplicaTab('insert')">Insert</span>
-                    <span class="rw-tab" data-demo-target="tab-layout" [class.active]="replicaActiveTab() === 'layout'" (click)="setReplicaTab('layout')">Layout</span>
-                    <span class="rw-tab" data-demo-target="tab-references" [class.active]="replicaActiveTab() === 'references'" (click)="setReplicaTab('references')">References</span>
-                    <span class="rw-tab disabled">Review</span>
-                    <span class="rw-tab disabled">View</span>
-                    <span class="rw-tab" data-demo-target="tab-tools" [class.active]="replicaActiveTab() === 'tools'" (click)="setReplicaTab('tools')">Tools</span>
-                  </div>
-
-                  <!-- Word Ribbon Command Bar with Targets (compact, explicit 68px height) -->
-                  <div class="replica-ribbon-commands">
-                    <!-- Home Tab Command Groups -->
-                    <ng-container *ngIf="replicaActiveTab() === 'home'">
-                      <!-- Clipboard -->
-                      <div class="rw-group">
-                        <div class="rw-group-row">
-                          <span class="rw-btn" data-demo-target="paste" [class.highlight]="activeAction() === 'paste'">Paste</span>
-                          <span class="rw-btn micro" data-demo-target="cut" [class.highlight]="activeAction() === 'cut'">✂</span>
-                          <span class="rw-btn micro" data-demo-target="copy" [class.highlight]="activeAction() === 'copy'">📋</span>
-                        </div>
-                        <span class="rw-group-label">Clipboard</span>
-                      </div>
-
-                      <!-- Font -->
-                      <div class="rw-group">
-                        <div class="rw-group-row">
-                          <span class="rw-select" data-demo-target="font">{{ replicaFont() }}</span>
-                          <span class="rw-select micro" data-demo-target="size">{{ replicaFontSize() }}</span>
-                        </div>
-                        <div class="rw-group-row">
-                          <span class="rw-btn micro" data-demo-target="bold" [class.highlight]="activeAction() === 'bold'"><strong>B</strong></span>
-                          <span class="rw-btn micro" data-demo-target="italic" [class.highlight]="activeAction() === 'italic'"><em>I</em></span>
-                          <span class="rw-btn micro" data-demo-target="underline" [class.highlight]="activeAction() === 'underline'"><u>U</u></span>
-                          <span class="rw-btn micro" data-demo-target="color" [class.highlight]="activeAction() === 'color'">A <small>▼</small></span>
-                          <span class="rw-btn micro" data-demo-target="highlight" [class.highlight]="activeAction() === 'highlight'">🖊 <small>▼</small></span>
-                        </div>
-                        <span class="rw-group-label">Font</span>
-                      </div>
-
-                      <!-- Paragraph -->
-                      <div class="rw-group">
-                        <div class="rw-group-row">
-                          <span class="rw-btn micro" data-demo-target="bullets" [class.highlight]="activeAction() === 'bullets'">•≡</span>
-                          <span class="rw-btn micro" data-demo-target="numbering" [class.highlight]="activeAction() === 'numbering'">1≡</span>
-                          <span class="rw-btn micro" data-demo-target="indent" [class.highlight]="activeAction() === 'indent'">⇥</span>
-                        </div>
-                        <div class="rw-group-row">
-                          <span class="rw-btn micro" data-demo-target="align-left" [class.highlight]="activeAction() === 'align-left'">⯸</span>
-                          <span class="rw-btn micro" data-demo-target="align-center" [class.highlight]="activeAction() === 'align-center'">≡</span>
-                          <span class="rw-btn micro" data-demo-target="align-right" [class.highlight]="activeAction() === 'align-right'">⯹</span>
-                          <span class="rw-btn micro" data-demo-target="align-justify" [class.highlight]="activeAction() === 'align-justify'">≣</span>
-                          <span class="rw-btn micro" data-demo-target="line-spacing" [class.highlight]="activeAction() === 'line-spacing'">↕</span>
-                        </div>
-                        <span class="rw-group-label">Paragraph</span>
-                      </div>
-
-                      <!-- Styles Gallery -->
-                      <div class="rw-group rw-styles-group">
-                        <div class="rw-styles-strip">
-                          <span class="rw-style-tile" data-demo-target="style-normal" [class.active]="replicaStyle() === 'normal'">Normal</span>
-                          <span class="rw-style-tile" data-demo-target="style-title" [class.active]="replicaStyle() === 'title'">Title</span>
-                          <span class="rw-style-tile" data-demo-target="style-subtitle" [class.active]="replicaStyle() === 'subtitle'">Subtitle</span>
-                          <span class="rw-style-tile" data-demo-target="style-h1" [class.active]="replicaStyle() === 'h1'">Heading 1</span>
-                          <span class="rw-style-tile" data-demo-target="style-h2" [class.active]="replicaStyle() === 'h2'">Heading 2</span>
-                          <span class="rw-style-tile" data-demo-target="style-h3" [class.active]="replicaStyle() === 'h3'">Heading 3</span>
-                        </div>
-                        <span class="rw-group-label">Styles</span>
-                      </div>
-
-                      <!-- Editing -->
-                      <div class="rw-group">
-                        <div class="rw-group-row vertical">
-                          <span class="rw-btn micro-text" data-demo-target="find" [class.highlight]="activeAction() === 'find'">🔍 Find</span>
-                          <span class="rw-btn micro-text" data-demo-target="replace" [class.highlight]="activeAction() === 'replace'">⇄ Replace</span>
-                        </div>
-                        <span class="rw-group-label">Editing</span>
-                      </div>
-                    </ng-container>
-
-                    <!-- Insert Tab Command Groups -->
-                    <ng-container *ngIf="replicaActiveTab() === 'insert'">
-                      <div class="rw-group">
-                        <div class="rw-group-row">
-                          <span class="rw-btn" data-demo-target="insert-page-break">⎘ Page Break</span>
-                        </div>
-                        <span class="rw-group-label">Pages</span>
-                      </div>
-
-                      <div class="rw-group">
-                        <div class="rw-group-row">
-                          <span class="rw-btn" data-demo-target="insert-table">田 Table</span>
-                        </div>
-                        <span class="rw-group-label">Tables</span>
-                      </div>
-
-                      <div class="rw-group">
-                        <div class="rw-group-row">
-                          <span class="rw-btn" data-demo-target="insert-image">🖼 Pictures</span>
-                        </div>
-                        <span class="rw-group-label">Illustrations</span>
-                      </div>
-
-                      <div class="rw-group">
-                        <div class="rw-group-row">
-                          <span class="rw-btn micro-text" data-demo-target="insert-header">⤒ Header</span>
-                          <span class="rw-btn micro-text" data-demo-target="insert-footer">⤓ Footer</span>
-                          <span class="rw-btn micro-text" data-demo-target="insert-page-numbers"># Number</span>
-                        </div>
-                        <span class="rw-group-label">Header & Footer</span>
-                      </div>
-
-                      <div class="rw-group">
-                        <div class="rw-group-row">
-                          <span class="rw-btn micro-text" data-demo-target="insert-comment">💬 Comment</span>
-                        </div>
-                        <span class="rw-group-label">Comments</span>
-                      </div>
-                    </ng-container>
-
-                    <!-- Layout Tab Command Groups -->
-                    <ng-container *ngIf="replicaActiveTab() === 'layout'">
-                      <div class="rw-group">
-                        <div class="rw-group-row">
-                          <span class="rw-btn" data-demo-target="page-setup">📄 Page Setup</span>
-                        </div>
-                        <span class="rw-group-label">Page Setup</span>
-                      </div>
-                    </ng-container>
-
-                    <!-- References Tab Command Groups -->
-                    <ng-container *ngIf="replicaActiveTab() === 'references'">
-                      <div class="rw-group">
-                        <div class="rw-group-row">
-                          <span class="rw-btn" data-demo-target="insert-toc">📑 Table of Contents</span>
-                        </div>
-                        <span class="rw-group-label">Table of Contents</span>
-                      </div>
-
-                      <div class="rw-group">
-                        <div class="rw-group-row">
-                          <span class="rw-btn" data-demo-target="insert-footnote">¹ Insert Footnote</span>
-                        </div>
-                        <span class="rw-group-label">Footnotes</span>
-                      </div>
-                    </ng-container>
-
-                    <!-- Tools Tab Command Groups -->
-                    <ng-container *ngIf="replicaActiveTab() === 'tools'">
-                      <div class="rw-group">
-                        <div class="rw-group-row">
-                          <span class="rw-btn" data-demo-target="tools-variables">&#123;x&#125; Variables</span>
-                        </div>
-                        <span class="rw-group-label">Variables</span>
-                      </div>
-                    </ng-container>
-                  </div>
+                  <!-- Word Replica Ribbon Component -->
+                  <app-word-replica-ribbon
+                    [activeTab]="replicaActiveTab()"
+                    [activeAction]="activeAction()"
+                    [hasTable]="hasReplicaTable()"
+                    [hasChart]="hasReplicaChart()"
+                    [font]="replicaFont()"
+                    [fontSize]="replicaFontSize()"
+                    [fontColor]="replicaActiveFontColor()"
+                    [highlightColor]="replicaActiveHighlightColor()"
+                    [selectedStyle]="replicaStyle()"
+                    [customStyles]="replicaCustomStyles()"
+                    [orientation]="replicaOrientation()"
+                    [isFontDropdownOpen]="replicaFontDropdownOpen()"
+                    [isSizeDropdownOpen]="replicaSizeDropdownOpen()"
+                    [isFontColorOpen]="replicaFontColorOpen()"
+                    [isHighlightOpen]="replicaHighlightOpen()"
+                    [isLineSpacingOpen]="replicaLineSpacingOpen()"
+                    [isStylesMenuOpen]="replicaStylesMenuOpen()"
+                    [isOrientationOpen]="replicaOrientationOpen()"
+                    [isShadingOpen]="replicaShadingOpen()"
+                    [isTableInsertOpen]="replicaInsertOpen()"
+                    [extraColors]="getReplicaColors()"
+                    (tabChange)="setReplicaTab($event)"
+                  ></app-word-replica-ribbon>
 
                   <!-- Word Document Canvas Sheet (occupies remaining height) -->
                   <div class="replica-doc-workspace">
@@ -225,10 +92,11 @@
                     <div class="replica-doc-stage" [class.landscape]="replicaOrientation() === 'landscape'">
                       <div
                         class="replica-doc-page"
-                        [style.padding-top.px]="replicaMargins().top * 16"
-                        [style.padding-bottom.px]="replicaMargins().bottom * 16"
-                        [style.padding-left.px]="replicaMargins().left * 16"
-                        [style.padding-right.px]="replicaMargins().right * 16"
+                        [attr.data-paper-size]="replicaPaperSize()"
+                        [style.padding-top.px]="replicaMargins().top * 18"
+                        [style.padding-bottom.px]="replicaMargins().bottom * 18"
+                        [style.padding-left.px]="replicaMargins().left * 18"
+                        [style.padding-right.px]="replicaMargins().right * 18"
                       >
                         <!-- Optional Header Area -->
                         <div class="replica-header-area" *ngIf="replicaHeader()" data-demo-target="replica-header">
@@ -346,6 +214,27 @@
                   </div>
                 </div>
 
+                <!-- Create a Style Dialog -->
+                <div class="replica-dialog-overlay" *ngIf="replicaDialog() === 'createStyle'">
+                  <div class="replica-dialog-box create-style-dialog">
+                    <div class="rd-header">Create a Style</div>
+                    <div class="rd-body">
+                      <div class="rd-field">
+                        <label>Name:</label>
+                        <input
+                          type="text"
+                          [value]="createStyleNameInput()"
+                          data-demo-target="create-style-name"
+                          readonly
+                        />
+                      </div>
+                      <div class="rd-actions">
+                        <span class="rd-btn primary" data-demo-target="create-style-ok">OK</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <!-- Insert Image Dialog -->
                 <div class="replica-dialog-overlay" *ngIf="replicaDialog() === 'insertImage'">
                   <div class="replica-dialog-box">
@@ -389,6 +278,73 @@
                       <div class="rd-actions">
                         <span class="rd-btn primary" data-demo-target="variables-insert-btn">Insert</span>
                       </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Insert Chart Dialog in Replica -->
+                <div class="replica-dialog-overlay" *ngIf="replicaChartDialogOpen()">
+                  <div class="replica-dialog-box replica-chart-dialog">
+                    <div class="rd-header">Insert Chart</div>
+                    <div class="replica-chart-dialog-tabs">
+                      <span class="rcd-tab active">All Charts</span>
+                    </div>
+                    <div class="rd-body rcd-body">
+                      <!-- Left chart types sidebar -->
+                      <div class="rcd-sidebar">
+                        <div
+                          class="rcd-type-item"
+                          [class.active]="replicaChartDialogType() === 'column'"
+                          data-demo-target="chart-type-column"
+                          (click)="replicaChartDialogType.set('column')"
+                        >
+                          📊 Column
+                        </div>
+                        <div
+                          class="rcd-type-item"
+                          [class.active]="replicaChartDialogType() === 'line'"
+                          data-demo-target="chart-type-line"
+                          (click)="replicaChartDialogType.set('line')"
+                        >
+                          📈 Line
+                        </div>
+                        <div
+                          class="rcd-type-item"
+                          [class.active]="replicaChartDialogType() === 'pie'"
+                          data-demo-target="chart-type-pie"
+                          (click)="replicaChartDialogType.set('pie')"
+                        >
+                          🥧 Pie
+                        </div>
+                        <div
+                          class="rcd-type-item"
+                          [class.active]="replicaChartDialogType() === 'bar'"
+                          data-demo-target="chart-type-bar"
+                          (click)="replicaChartDialogType.set('bar')"
+                        >
+                          📉 Bar
+                        </div>
+                      </div>
+                      <!-- Right content -->
+                      <div class="rcd-main">
+                        <div class="rcd-title-field">
+                          <label>Chart title:</label>
+                          <input
+                            type="text"
+                            class="rcd-input"
+                            data-demo-target="chart-title-input"
+                            [value]="replicaChartTitleInput()"
+                            readonly
+                          />
+                        </div>
+                        <div class="rcd-preview-area">
+                          <span class="rcd-type-badge">{{ replicaChartDialogType() | uppercase }} PREVIEW</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="rd-actions">
+                      <span class="rd-btn primary" data-demo-target="chart-insert-ok">Insert</span>
+                      <span class="rd-btn" (click)="replicaChartDialogOpen.set(false)">Cancel</span>
                     </div>
                   </div>
                 </div>

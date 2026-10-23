@@ -5,6 +5,7 @@ import {
   Component,
   ElementRef,
   EventEmitter,
+  HostListener,
   Input,
   OnDestroy,
   OnInit,
@@ -15,16 +16,27 @@ import {
 import { CommonModule } from '@angular/common';
 import { TaskGoal } from '../../models/activity.types';
 import { COLORS, findText, safeAsset } from '../../utils/editor.utils';
+import { WordReplicaRibbonComponent } from './word-replica-ribbon.component';
 
 export interface DemoStep {
   label: string;
   state: 'pending' | 'active' | 'done';
 }
 
+// ============================================================================
+// Show Me How Timing Constants (Word & Excel replica demo playback)
+// ============================================================================
+export const CURSOR_MOVE_DURATION_MS = 1100;     // ~2x slower glide to target (was ~550ms)
+export const PRE_CLICK_PAUSE_MS = 500;           // 400–600 ms pause before clicking
+export const CLICK_EFFECT_DURATION_MS = 400;     // Visible click pulse effect duration
+export const POST_OPEN_PAUSE_MS = 600;           // Pause after menu / dropdown / dialog opens
+export const STEP_TRANSITION_PAUSE_MS = 500;     // Pause between actions / steps
+export const REPLICA_BASE_WIDTH = 1160;          // Base ribbon width to fit all ribbon groups (no overflow/scroll)
+
 @Component({
   selector: 'lib-show-me-how',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, WordReplicaRibbonComponent],
   templateUrl: './show-me-how.component.html',
   styleUrls: ['./show-me-how.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -58,17 +70,66 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
   readonly replicaDialog = signal<string | null>(null);
 
   // Tab switching state
-  readonly replicaActiveTab = signal<'home' | 'insert' | 'layout' | 'references' | 'tools'>('home');
+  readonly replicaActiveTab = signal<string>('home');
+  readonly hasReplicaTable = signal<boolean>(false);
+  readonly replicaShadingOpen = signal<boolean>(false);
+  readonly replicaInsertOpen = signal<boolean>(false);
+  readonly replicaOrientationOpen = signal<boolean>(false);
+  readonly replicaStylesMenuOpen = signal<boolean>(false);
+  readonly replicaCustomStyles = signal<Array<{ name: string; [key: string]: any }>>([]);
+  readonly createStyleNameInput = signal<string>('');
+  readonly replicaChartDialogOpen = signal<boolean>(false);
+  readonly replicaChartDialogType = signal<'column' | 'bar' | 'line' | 'pie'>('column');
+  readonly replicaChartTitleInput = signal<string>('Chart Title');
+
+  readonly replicaColors = [
+    { key: 'white', color: '#ffffff' },
+    { key: 'black', color: '#000000' },
+    { key: 'darkGray', color: '#434343' },
+    { key: 'gray', color: '#999999' },
+    { key: 'blue', color: '#3d85c6' },
+    { key: 'orange', color: '#e69138' },
+    { key: 'yellow', color: '#f1c232' },
+    { key: 'green', color: '#6aa84f' },
+    { key: 'cyan', color: '#45818e' },
+    { key: 'purple', color: '#674ea7' },
+    { key: 'lightRed', color: '#f4cccc' },
+    { key: 'red', color: '#cc0000' },
+    { key: 'lightOrange', color: '#fce5cd' },
+    { key: 'lightYellow', color: '#fff2cc' },
+    { key: 'lightGreen', color: '#d9ead3' },
+    { key: 'lightCyan', color: '#d0e0e3' },
+    { key: 'lightBlue', color: '#cfe2f3' },
+    { key: 'lightPurple', color: '#d9d2e9' },
+    { key: 'magenta', color: '#a64d79' },
+    { key: 'lightMagenta', color: '#ead1dc' },
+  ];
+
+  getReplicaColors(): Array<{ key: string; color: string }> {
+    const list = [...this.replicaColors];
+    if (this.goals) {
+      for (const g of this.goals) {
+        if (g.cellColors) {
+          for (const cc of g.cellColors) {
+            if (cc.color && !list.some(item => item.key === cc.color)) {
+              list.push({ key: cc.color, color: COLORS[cc.color] || cc.color });
+            }
+          }
+        }
+      }
+    }
+    return list;
+  }
 
   // Coherent scaling state
-  readonly baseWidth = 680;
+  readonly baseWidth = REPLICA_BASE_WIDTH;
   readonly scaleTransform = signal<string>('none');
   readonly scalerWidth = signal<string>('100%');
   readonly scalerHeight = signal<string>('100%');
   private resizeObserver?: ResizeObserver;
 
   // Word replica UI state
-  readonly replicaFont = signal<string>('Calibri');
+  readonly replicaFont = signal<string>('Arial');
   readonly replicaFontSize = signal<string>('11');
   readonly replicaStyle = signal<string>('normal');
   readonly replicaOrientation = signal<'portrait' | 'landscape'>('portrait');
@@ -83,6 +144,16 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
   readonly replicaFooter = signal<string>('');
   readonly replicaPageNumbers = signal<boolean>(false);
   readonly replicaComments = signal<any[]>([]);
+
+  // Replica Popovers and Active formatting state
+  readonly replicaFontDropdownOpen = signal<boolean>(false);
+  readonly replicaSizeDropdownOpen = signal<boolean>(false);
+  readonly replicaFontColorOpen = signal<boolean>(false);
+  readonly replicaHighlightOpen = signal<boolean>(false);
+  readonly replicaLineSpacingOpen = signal<boolean>(false);
+  readonly replicaActiveFontColor = signal<string>('#000000');
+  readonly replicaActiveHighlightColor = signal<string>('#facc15');
+  readonly hasReplicaChart = signal<boolean>(false);
 
   // Find & replace typing simulation
   readonly findWhatInput = signal<string>('');
@@ -198,11 +269,15 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
   private getStepLabelForGoal(g: any): string {
     switch (g?.type) {
       case 'textStyle':
+        if (g.superscript) return g.text ? `Apply superscript to "${g.text}"` : 'Apply superscript';
+        if (g.subscript) return g.text ? `Apply subscript to "${g.text}"` : 'Apply subscript';
         return g.text ? `Format "${g.text}"` : 'Apply text formatting';
       case 'paragraph':
         return g.style ? `Set style to ${g.style}` : 'Format paragraph';
       case 'list':
-        return g.listType === 'number' ? 'Create numbered list' : 'Create bullet list';
+        return (g.listType === 'numbered' || g.listType === 'number')
+          ? 'Create numbered list'
+          : 'Create bullet list';
       case 'textContains':
         return g.notContains?.length ? `Replace "${g.notContains[0]}"` : 'Edit document text';
       case 'textCount':
@@ -212,13 +287,44 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
       case 'image':
         return 'Insert image';
       case 'pageSetup':
+        if (g.orientation) return `Set orientation to ${g.orientation}`;
+        if (g.paperSize) return `Set paper size to ${g.paperSize}`;
+        if (g.margins) return 'Set page margins';
         return 'Change page setup';
-      case 'table':
+      case 'style':
+        return g.name ? `Create style "${g.name}"` : 'Create a style';
+      case 'table': {
+        const rawDoc = this.startingDocument || '';
+        const hasStartingTable = rawDoc.toLowerCase().includes('<table');
+        if (g.style) {
+          return `Apply ${g.style} style`;
+        }
+        if (g.cellColors) {
+          return 'Apply cell shading';
+        }
+        if (hasStartingTable) {
+          const startRows = (rawDoc.match(/<tr/gi) || []).length || 3;
+          if (g.rows && (!g.columns || g.rows > startRows)) {
+            return 'Insert table row';
+          }
+          if (g.columns) {
+            return 'Insert table column';
+          }
+        }
         return 'Insert table';
+      }
       case 'element':
         return `Insert ${g.element || 'element'}`;
       case 'action':
         return `Do ${g.action}`;
+      case 'chart': {
+        const type = g['chartType'] ? String(g['chartType']) : 'column';
+        const typeCap = type.charAt(0).toUpperCase() + type.slice(1);
+        if (g['title']) {
+          return `Insert ${typeCap} chart "${g['title']}"`;
+        }
+        return `Insert ${typeCap} chart`;
+      }
       default:
         return 'Complete step';
     }
@@ -249,11 +355,33 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
       docEl.innerHTML = rawDoc;
     }
 
-    this.replicaFont.set('Calibri');
+    this.replicaFont.set('Arial');
     this.replicaFontSize.set('11');
     this.replicaStyle.set('normal');
 
     this.replicaActiveTab.set('home');
+    this.replicaFontDropdownOpen.set(false);
+    this.replicaSizeDropdownOpen.set(false);
+    this.replicaFontColorOpen.set(false);
+    this.replicaHighlightOpen.set(false);
+    this.replicaLineSpacingOpen.set(false);
+    this.replicaActiveFontColor.set('#000000');
+    this.replicaActiveHighlightColor.set('#facc15');
+    this.replicaShadingOpen.set(false);
+    this.replicaInsertOpen.set(false);
+    this.replicaOrientationOpen.set(false);
+    this.replicaStylesMenuOpen.set(false);
+    this.replicaCustomStyles.set([]);
+    this.createStyleNameInput.set('');
+    this.replicaChartDialogOpen.set(false);
+    this.replicaChartDialogType.set('column');
+    this.replicaChartTitleInput.set('Chart Title');
+    const hasTable = rawDoc.toLowerCase().includes('<table');
+    this.hasReplicaTable.set(hasTable);
+    const hasChart =
+      rawDoc.toLowerCase().includes('data-chart-type') ||
+      rawDoc.toLowerCase().includes('chart-container');
+    this.hasReplicaChart.set(hasChart);
     this.updateScaling();
 
     // Restore page setup
@@ -288,9 +416,14 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
     this.replicaImageFile.set(defaultImg);
   }
 
-  setReplicaTab(tab: 'home' | 'insert' | 'layout' | 'references' | 'tools'): void {
+  setReplicaTab(tab: string): void {
     this.replicaActiveTab.set(tab);
     this.cdr.markForCheck();
+  }
+
+  @HostListener('window:resize')
+  onWindowResize(): void {
+    this.updateScaling();
   }
 
   updateScaling(): void {
@@ -332,6 +465,9 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
   private async moveTo(targetName: string): Promise<boolean> {
     if (this.isCancelled) return false;
 
+    if (targetName === 'orientation') targetName = 'menu-layout-orientation';
+    if (targetName === 'margins') targetName = 'page-margins';
+
     // Switch ribbon tab automatically if targeting tab buttons or tab-specific controls
     if (targetName === 'tab-insert') {
       this.replicaActiveTab.set('insert');
@@ -343,9 +479,27 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
       this.replicaActiveTab.set('tools');
     } else if (targetName === 'tab-home') {
       this.replicaActiveTab.set('home');
+    } else if (targetName === 'table-design-tab') {
+      this.replicaActiveTab.set('tableDesign');
+    } else if (targetName === 'table-layout-tab') {
+      this.replicaActiveTab.set('tableLayout');
+    } else if (targetName === 'chart-design-tab') {
+      this.replicaActiveTab.set('chartDesign');
+    } else if (
+      targetName === 'cell-shading' ||
+      targetName.startsWith('cell-shading-') ||
+      targetName.startsWith('table-style-')
+    ) {
+      this.replicaActiveTab.set('tableDesign');
+    } else if (
+      targetName === 'table-insert' ||
+      targetName.startsWith('table-insert-')
+    ) {
+      this.replicaActiveTab.set('tableLayout');
     } else if (
       [
         'insert-image',
+        'insert-chart',
         'insert-table',
         'insert-page-break',
         'insert-header',
@@ -357,7 +511,16 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
       this.replicaActiveTab.set('insert');
     } else if (['insert-toc', 'insert-footnote'].includes(targetName)) {
       this.replicaActiveTab.set('references');
-    } else if (targetName === 'page-setup') {
+    } else if (
+      [
+        'page-setup',
+        'page-margins',
+        'menu-layout-orientation',
+        'orient-portrait',
+        'orient-landscape',
+        'page-size',
+      ].includes(targetName)
+    ) {
       this.replicaActiveTab.set('layout');
     } else if (targetName === 'tools-variables') {
       this.replicaActiveTab.set('tools');
@@ -366,8 +529,11 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
         'bold',
         'italic',
         'underline',
+        'ribbon-subscript',
+        'ribbon-superscript',
         'font',
         'size',
+        'font-size',
         'color',
         'highlight',
         'bullets',
@@ -383,32 +549,53 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
         'copy',
         'find',
         'replace',
+        'styles-more-btn',
+        'style-create',
       ].includes(targetName) ||
-      targetName.startsWith('style-')
+      targetName.startsWith('style-') ||
+      targetName.startsWith('font-item-') ||
+      targetName.startsWith('size-item-') ||
+      targetName.startsWith('swatch-') ||
+      targetName.startsWith('highlight-swatch-') ||
+      targetName.startsWith('line-spacing-')
     ) {
       this.replicaActiveTab.set('home');
     }
     this.cdr.markForCheck();
 
     const host = this.elRef.nativeElement;
-    let target = host.querySelector(`[data-demo-target="${targetName}"]`) as HTMLElement;
+    let target = (host.querySelector(`[data-demo-target="${targetName}"]`) ||
+      host.querySelector(`[data-demo-target-alt="${targetName}"]`)) as HTMLElement;
     if (!target) {
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 10; i++) {
         await this.delay(60);
         if (this.isCancelled) return false;
-        target = host.querySelector(`[data-demo-target="${targetName}"]`) as HTMLElement;
+        target = (host.querySelector(`[data-demo-target="${targetName}"]`) ||
+          host.querySelector(`[data-demo-target-alt="${targetName}"]`)) as HTMLElement;
         if (target) break;
       }
     }
     if (!target) return false;
 
+    if (typeof target.scrollIntoView === 'function') {
+      try {
+        target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      } catch {}
+    }
+
     this.positionCursorOver(target.getBoundingClientRect());
 
-    await this.delay(300);
+    // Glide smoothly to target (~2x slower)
+    await this.delay(CURSOR_MOVE_DURATION_MS);
     if (this.isCancelled) return false;
 
+    // Short pause (400-600ms) before clicking
+    await this.delay(PRE_CLICK_PAUSE_MS);
+    if (this.isCancelled) return false;
+
+    // Visible click effect
     this.isClicking.set(true);
-    await this.delay(100);
+    await this.delay(CLICK_EFFECT_DURATION_MS);
     this.isClicking.set(false);
     return true;
   }
@@ -420,11 +607,17 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
     const targetRect = rects.length > 0 ? rects[0] : range.getBoundingClientRect();
     this.positionCursorOver(targetRect);
 
-    await this.delay(300);
+    // Glide smoothly to target range (~2x slower)
+    await this.delay(CURSOR_MOVE_DURATION_MS);
     if (this.isCancelled) return false;
 
+    // Short pause (400-600ms) before clicking
+    await this.delay(PRE_CLICK_PAUSE_MS);
+    if (this.isCancelled) return false;
+
+    // Visible click effect
     this.isClicking.set(true);
-    await this.delay(100);
+    await this.delay(CLICK_EFFECT_DURATION_MS);
     this.isClicking.set(false);
     return true;
   }
@@ -438,12 +631,13 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
   async play(): Promise<void> {
     await this.delay(350);
     if (this.isCancelled) return;
+    this.updateScaling();
 
     const goalsList = this.goals || [];
     const total = goalsList.length;
 
     if (total === 0) {
-      await this.delay(300);
+      await this.delay(STEP_TRANSITION_PAUSE_MS);
       if (this.isCancelled) return;
       this.showToast.set(true);
       return;
@@ -464,7 +658,7 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
         allSuccess = false;
         // Do not mark step done if required target or action failed
       }
-      await this.delay(300);
+      await this.delay(STEP_TRANSITION_PAUSE_MS);
     }
 
     if (this.isCancelled) return;
@@ -522,38 +716,106 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
         await this.delay(250);
       }
 
+      // Subscript
+      if (g.subscript !== undefined) {
+        this.activeAction.set('ribbon-subscript');
+        await this.moveTo('ribbon-subscript');
+        if (g.subscript) {
+          selSpan.style.verticalAlign = 'sub';
+          selSpan.style.fontSize = '0.75em';
+          selSpan.style.lineHeight = '0';
+        } else {
+          selSpan.style.verticalAlign = 'baseline';
+          selSpan.style.fontSize = '';
+          selSpan.style.lineHeight = '';
+        }
+        await this.delay(250);
+      }
+
+      // Superscript
+      if (g.superscript !== undefined) {
+        this.activeAction.set('ribbon-superscript');
+        await this.moveTo('ribbon-superscript');
+        if (g.superscript) {
+          selSpan.style.verticalAlign = 'super';
+          selSpan.style.fontSize = '0.75em';
+          selSpan.style.lineHeight = '0';
+        } else {
+          selSpan.style.verticalAlign = 'baseline';
+          selSpan.style.fontSize = '';
+          selSpan.style.lineHeight = '';
+        }
+        await this.delay(250);
+      }
+
       // 5. Font
       if (g.font) {
-        this.replicaFont.set(g.font);
+        this.activeAction.set('font');
         await this.moveTo('font');
+        this.replicaFontDropdownOpen.set(true);
+        this.cdr.markForCheck();
+        await this.delay(POST_OPEN_PAUSE_MS);
+
+        const fontSlug = 'font-item-' + g.font.toLowerCase().replace(/\s+/g, '-');
+        await this.moveTo(fontSlug);
+        this.replicaFont.set(g.font);
         selSpan.style.fontFamily = g.font;
-        await this.delay(250);
+        this.replicaFontDropdownOpen.set(false);
+        this.cdr.markForCheck();
+        await this.delay(STEP_TRANSITION_PAUSE_MS);
       }
 
       // 6. Size
       if (g.size) {
-        this.replicaFontSize.set(String(g.size));
+        this.activeAction.set('size');
         await this.moveTo('size');
+        this.replicaSizeDropdownOpen.set(true);
+        this.cdr.markForCheck();
+        await this.delay(POST_OPEN_PAUSE_MS);
+
+        const sizeTarget = 'size-item-' + g.size;
+        await this.moveTo(sizeTarget);
+        this.replicaFontSize.set(String(g.size));
         selSpan.style.fontSize = g.size + 'pt';
-        await this.delay(250);
+        this.replicaSizeDropdownOpen.set(false);
+        this.cdr.markForCheck();
+        await this.delay(STEP_TRANSITION_PAUSE_MS);
       }
 
       // 7. Color (mapping through COLORS palette)
       if (g.color) {
         this.activeAction.set('color');
         await this.moveTo('color');
+        this.replicaFontColorOpen.set(true);
+        this.cdr.markForCheck();
+        await this.delay(POST_OPEN_PAUSE_MS);
+
+        const swatchTarget = 'swatch-' + g.color;
+        await this.moveTo(swatchTarget);
         const mappedColor = COLORS[g.color] || g.color;
+        this.replicaActiveFontColor.set(mappedColor);
         selSpan.style.color = mappedColor;
-        await this.delay(250);
+        this.replicaFontColorOpen.set(false);
+        this.cdr.markForCheck();
+        await this.delay(STEP_TRANSITION_PAUSE_MS);
       }
 
       // 8. Highlight (mapping through COLORS palette)
       if (g.highlight) {
         this.activeAction.set('highlight');
         await this.moveTo('highlight');
+        this.replicaHighlightOpen.set(true);
+        this.cdr.markForCheck();
+        await this.delay(POST_OPEN_PAUSE_MS);
+
+        const swatchTarget = 'highlight-swatch-' + g.highlight;
+        await this.moveTo(swatchTarget);
         const mappedHl = COLORS[g.highlight] || g.highlight;
+        this.replicaActiveHighlightColor.set(mappedHl);
         selSpan.style.backgroundColor = mappedHl;
-        await this.delay(250);
+        this.replicaHighlightOpen.set(false);
+        this.cdr.markForCheck();
+        await this.delay(STEP_TRANSITION_PAUSE_MS);
       }
 
       // Remove selection highlight while preserving applied formatting
@@ -594,9 +856,19 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
       if (g.lineSpacing !== undefined) {
         this.activeAction.set('line-spacing');
         await this.moveTo('line-spacing');
+        this.replicaLineSpacingOpen.set(true);
+        this.cdr.markForCheck();
+        await this.delay(POST_OPEN_PAUSE_MS);
+
+        const spacingNum = Number(g.lineSpacing);
+        const spacingStr = spacingNum % 1 === 0 ? spacingNum.toFixed(1) : String(spacingNum);
+        const lsTarget = 'line-spacing-' + (spacingStr === '2' ? '2.0' : spacingStr);
+        await this.moveTo(lsTarget);
         block.style.lineHeight = String(g.lineSpacing);
         block.dataset['lineSpacing'] = String(g.lineSpacing);
-        await this.delay(250);
+        this.replicaLineSpacingOpen.set(false);
+        this.cdr.markForCheck();
+        await this.delay(STEP_TRANSITION_PAUSE_MS);
       }
 
       // Paragraph Style
@@ -643,11 +915,12 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
         await this.moveTo('doc-canvas');
       }
 
-      const listTarget = g.listType === 'number' ? 'numbering' : 'bullets';
+      const isNumbered = g.listType === 'numbered' || g.listType === 'number';
+      const listTarget = isNumbered ? 'numbering' : 'bullets';
       this.activeAction.set(listTarget);
       await this.moveTo(listTarget);
 
-      const listTag = g.listType === 'number' ? 'ol' : 'ul';
+      const listTag = isNumbered ? 'ol' : 'ul';
       const listEl = document.createElement(listTag);
       if (g.level !== undefined && g.level > 0) {
         listEl.style.marginLeft = g.level * 24 + 'px';
@@ -686,7 +959,8 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
           this.activeAction.set('replace');
           await this.moveTo('replace');
           this.replicaDialog.set('findReplace');
-          await this.delay(250);
+          this.cdr.markForCheck();
+          await this.delay(POST_OPEN_PAUSE_MS);
 
           // Type wrong word
           this.findWhatInput.set('');
@@ -828,7 +1102,8 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
       this.activeAction.set('insert-image');
       await this.moveTo('insert-image');
       this.replicaDialog.set('insertImage');
-      await this.delay(250);
+      this.cdr.markForCheck();
+      await this.delay(POST_OPEN_PAUSE_MS);
 
       await this.moveTo('insert-image-ok-btn');
       this.replicaDialog.set(null);
@@ -853,40 +1128,196 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     if (type === 'pageSetup') {
-      this.activeAction.set('page-setup');
-      await this.moveTo('page-setup');
-      this.replicaDialog.set('pageSetup');
-      await this.delay(250);
-
       if (g.orientation) {
-        const orientTarget = 'ps-orient-' + g.orientation;
+        this.activeAction.set('menu-layout-orientation');
+        await this.moveTo('menu-layout-orientation');
+        this.replicaOrientationOpen.set(true);
+        this.cdr.markForCheck();
+        await this.delay(POST_OPEN_PAUSE_MS);
+
+        const orientTarget = g.orientation === 'portrait' ? 'orient-portrait' : 'orient-landscape';
         await this.moveTo(orientTarget);
         this.replicaOrientation.set(g.orientation);
-        await this.delay(200);
+        this.replicaOrientationOpen.set(false);
+        this.cdr.markForCheck();
+        await this.delay(STEP_TRANSITION_PAUSE_MS);
       }
 
       if (g.paperSize) {
+        this.activeAction.set('page-size');
+        await this.moveTo('page-size');
+        this.replicaDialog.set('pageSetup');
+        this.cdr.markForCheck();
+        await this.delay(POST_OPEN_PAUSE_MS);
+
         await this.moveTo('ps-size');
         this.replicaPaperSize.set(g.paperSize);
         await this.delay(200);
+
+        await this.moveTo('pagesetup-ok-btn');
+        this.replicaDialog.set(null);
+        this.cdr.markForCheck();
+        await this.delay(STEP_TRANSITION_PAUSE_MS);
       }
 
       if (g.margins) {
+        this.activeAction.set('page-margins');
+        await this.moveTo('page-margins');
+        this.replicaDialog.set('pageSetup');
+        this.cdr.markForCheck();
+        await this.delay(POST_OPEN_PAUSE_MS);
+
         for (const [side, val] of Object.entries(g.margins)) {
           const mTarget = 'ps-margin-' + side;
           await this.moveTo(mTarget);
           this.replicaMargins.update((cur) => ({ ...cur, [side]: val as number }));
           await this.delay(150);
         }
+
+        await this.moveTo('pagesetup-ok-btn');
+        this.replicaDialog.set(null);
+        this.cdr.markForCheck();
+        await this.delay(STEP_TRANSITION_PAUSE_MS);
       }
 
-      await this.moveTo('pagesetup-ok-btn');
-      this.replicaDialog.set(null);
+      if (!g.orientation && !g.paperSize && !g.margins) {
+        this.activeAction.set('page-margins');
+        await this.moveTo('page-margins');
+        this.replicaDialog.set('pageSetup');
+        this.cdr.markForCheck();
+        await this.delay(POST_OPEN_PAUSE_MS);
+        await this.moveTo('pagesetup-ok-btn');
+        this.replicaDialog.set(null);
+      }
+
       this.activeAction.set('');
       return true;
     }
 
     if (type === 'table') {
+      const rawDoc = this.startingDocument !== undefined && this.startingDocument !== null
+        ? this.startingDocument
+        : '';
+      const hasStartingTable = rawDoc.toLowerCase().includes('<table');
+
+      // Case 1: table goal with style
+      if (g.style) {
+        const tbl = docEl.querySelector('table');
+        if (tbl) {
+          const firstCell = tbl.rows[0]?.cells[0] || tbl;
+          const range = document.createRange();
+          range.selectNodeContents(firstCell);
+          await this.moveToRange(range);
+          await this.delay(200);
+
+          await this.moveTo('table-design-tab');
+          this.replicaActiveTab.set('tableDesign');
+          await this.delay(200);
+
+          const slug = 'table-style-' + g.style.toLowerCase().replace(/\s+/g, '-');
+          await this.moveTo(slug);
+          tbl.setAttribute('data-table-style', g.style);
+          await this.delay(300);
+        }
+        this.activeAction.set('');
+        return true;
+      }
+
+      // Case 2: table goal with cellColors
+      if (g.cellColors && Array.isArray(g.cellColors) && g.cellColors.length > 0) {
+        const tbl = docEl.querySelector('table');
+        if (tbl) {
+          const cc = g.cellColors[0];
+          const targetCell = tbl.rows[cc.row]?.cells[cc.col] || tbl.rows[0]?.cells[0];
+          if (targetCell) {
+            const range = document.createRange();
+            range.selectNodeContents(targetCell);
+            await this.moveToRange(range);
+            targetCell.classList.add('demo-selection-box');
+            await this.delay(200);
+
+            await this.moveTo('table-design-tab');
+            this.replicaActiveTab.set('tableDesign');
+            await this.delay(200);
+
+            await this.moveTo('cell-shading');
+            this.replicaShadingOpen.set(true);
+            this.cdr.markForCheck();
+            await this.delay(POST_OPEN_PAUSE_MS);
+
+            const colorKey = cc.color;
+            await this.moveTo('cell-shading-' + colorKey);
+            const colorHex = COLORS[colorKey] || colorKey;
+            targetCell.style.backgroundColor = colorHex;
+            targetCell.classList.remove('demo-selection-box');
+            this.replicaShadingOpen.set(false);
+            this.cdr.markForCheck();
+            await this.delay(STEP_TRANSITION_PAUSE_MS);
+          }
+          for (let i = 1; i < g.cellColors.length; i++) {
+            const extraCc = g.cellColors[i];
+            const extraCell = tbl.rows[extraCc.row]?.cells[extraCc.col];
+            if (extraCell) {
+              extraCell.style.backgroundColor = COLORS[extraCc.color] || extraCc.color;
+            }
+          }
+        }
+        this.activeAction.set('');
+        return true;
+      }
+
+      // Case 3: table goal with rows / columns when the starting document already has a table
+      if (hasStartingTable && (g.rows || g.columns)) {
+        const tbl = docEl.querySelector('table');
+        if (tbl) {
+          const lastCell = tbl.rows[tbl.rows.length - 1]?.cells[0] || tbl.rows[0]?.cells[0] || tbl;
+          const range = document.createRange();
+          range.selectNodeContents(lastCell);
+          await this.moveToRange(range);
+          await this.delay(200);
+
+          await this.moveTo('table-layout-tab');
+          this.replicaActiveTab.set('tableLayout');
+          await this.delay(200);
+
+          await this.moveTo('table-insert');
+          this.replicaInsertOpen.set(true);
+          this.cdr.markForCheck();
+          await this.delay(POST_OPEN_PAUSE_MS);
+
+          const startRows = (rawDoc.match(/<tr/gi) || []).length || 3;
+          const isRows = g.rows && (!g.columns || g.rows > startRows);
+
+          if (isRows) {
+            await this.moveTo('table-insert-below');
+            const colCount = tbl.rows[0]?.cells.length || 3;
+            while (tbl.rows.length < (g.rows || startRows + 1)) {
+              const newRow = tbl.insertRow();
+              for (let j = 0; j < colCount; j++) {
+                const newCell = newRow.insertCell();
+                newCell.innerHTML = '<br>';
+              }
+            }
+          } else {
+            await this.moveTo('table-insert-right');
+            const targetCols = g.columns || 4;
+            while (tbl.rows[0]?.cells.length < targetCols) {
+              for (let r = 0; r < tbl.rows.length; r++) {
+                const newCell = tbl.rows[r].insertCell();
+                newCell.innerHTML = '<br>';
+              }
+            }
+          }
+
+          this.replicaInsertOpen.set(false);
+          this.cdr.markForCheck();
+          await this.delay(300);
+        }
+        this.activeAction.set('');
+        return true;
+      }
+
+      // Case 4: When starting document has no table (Lesson 10) - keep existing exactly as it is!
       let rows = g.rows;
       let cols = g.columns;
       if ((!rows || !cols) && g.cells && g.cells.length) {
@@ -901,7 +1332,8 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
       this.activeAction.set('insert-table');
       await this.moveTo('insert-table');
       this.replicaDialog.set('insertTable');
-      await this.delay(250);
+      this.cdr.markForCheck();
+      await this.delay(POST_OPEN_PAUSE_MS);
 
       await this.moveTo('insert-table-ok-btn');
       this.replicaDialog.set(null);
@@ -917,6 +1349,7 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
         }
       }
       docEl.appendChild(tbl);
+      this.hasReplicaTable.set(true);
 
       if (g.cells && g.cells.length) {
         for (let r = 0; r < rows; r++) {
@@ -1000,7 +1433,8 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
         this.activeAction.set('tools-variables');
         await this.moveTo('tools-variables');
         this.replicaDialog.set('variables');
-        await this.delay(250);
+        this.cdr.markForCheck();
+        await this.delay(POST_OPEN_PAUSE_MS);
         await this.moveTo('variables-insert-btn');
         this.replicaDialog.set(null);
 
@@ -1068,7 +1502,8 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
         this.activeAction.set('replace');
         await this.moveTo('replace');
         this.replicaDialog.set('findReplace');
-        await this.delay(300);
+        this.cdr.markForCheck();
+        await this.delay(POST_OPEN_PAUSE_MS);
       } else if (act === 'find') {
         this.activeAction.set('find');
         await this.moveTo('find');
@@ -1077,10 +1512,11 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
           if (r) await this.moveToRange(r);
         }
       } else if (act === 'openPageSetup') {
-        this.activeAction.set('page-setup');
-        await this.moveTo('page-setup');
+        this.activeAction.set('page-margins');
+        await this.moveTo('page-margins');
         this.replicaDialog.set('pageSetup');
-        await this.delay(300);
+        this.cdr.markForCheck();
+        await this.delay(POST_OPEN_PAUSE_MS);
       } else if (act === 'nextCell') {
         const tbl = docEl.querySelector('table');
         if (!tbl) return false;
@@ -1098,7 +1534,8 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
         this.activeAction.set('tools-variables');
         await this.moveTo('tools-variables');
         this.replicaDialog.set('variables');
-        await this.delay(300);
+        this.cdr.markForCheck();
+        await this.delay(POST_OPEN_PAUSE_MS);
       } else {
         await this.moveTo('doc-canvas');
       }
@@ -1108,7 +1545,283 @@ export class ShowMeHowComponent implements OnInit, AfterViewInit, OnDestroy {
       return true;
     }
 
+    if (type === 'style') {
+      const firstP = (docEl.querySelector('p, div, h1, h2, h3') || docEl.firstElementChild) as HTMLElement | null;
+      if (!firstP) return false;
+
+      const pText = firstP.textContent?.trim();
+      const pRange = pText ? findText(docEl, pText) : null;
+      if (pRange) {
+        await this.moveToRange(pRange);
+      } else {
+        const r = document.createRange();
+        r.selectNodeContents(firstP);
+        await this.moveToRange(r);
+      }
+      firstP.classList.add('demo-selection-box');
+      await this.delay(250);
+
+      this.activeAction.set('styles-more-btn');
+      await this.moveTo('styles-more-btn');
+      this.replicaStylesMenuOpen.set(true);
+      this.cdr.markForCheck();
+      await this.delay(POST_OPEN_PAUSE_MS);
+
+      await this.moveTo('style-create');
+      this.replicaStylesMenuOpen.set(false);
+      this.replicaDialog.set('createStyle');
+      this.cdr.markForCheck();
+      await this.delay(POST_OPEN_PAUSE_MS);
+
+      this.createStyleNameInput.set('');
+      await this.moveTo('create-style-name');
+      const styleName = g.name || 'Custom';
+      for (const ch of styleName) {
+        if (this.isCancelled) return false;
+        this.createStyleNameInput.update((v) => v + ch);
+        await this.delay(60);
+      }
+      await this.delay(200);
+
+      await this.moveTo('create-style-ok');
+      this.replicaDialog.set(null);
+      firstP.classList.remove('demo-selection-box');
+      this.cdr.markForCheck();
+      await this.delay(250);
+
+      this.replicaCustomStyles.update((list) => [...list, { ...g, name: styleName }]);
+      this.cdr.markForCheck();
+      await this.delay(300);
+
+      if (g.appliedTo) {
+        const appRange = findText(docEl, g.appliedTo);
+        if (appRange) {
+          await this.moveToRange(appRange);
+          const targetBlock = appRange.startContainer.parentElement?.closest('p, h1, h2, h3, li, div') as HTMLElement | null;
+
+          const slug = 'style-' + styleName.toLowerCase().replace(/\s+/g, '-');
+          this.replicaStyle.set(styleName);
+          await this.moveTo(slug);
+
+          if (targetBlock) {
+            targetBlock.setAttribute('data-paragraph-style', styleName);
+            if (g.bold !== undefined) targetBlock.style.fontWeight = g.bold ? 'bold' : 'normal';
+            if (g.italic !== undefined) targetBlock.style.fontStyle = g.italic ? 'italic' : 'normal';
+            if (g.underline !== undefined) targetBlock.style.textDecoration = g.underline ? 'underline' : 'none';
+            if (g.font) targetBlock.style.fontFamily = g.font;
+            if (g.size) targetBlock.style.fontSize = g.size + 'pt';
+            if (g.color) targetBlock.style.color = COLORS[g.color] || g.color;
+          }
+          await this.delay(250);
+        }
+      }
+
+      this.activeAction.set('');
+      return true;
+    }
+
+    if (type === 'chart') {
+      const chartType = (g.chartType || 'column').toLowerCase();
+      const targetTitle = g.title || (chartType.charAt(0).toUpperCase() + chartType.slice(1) + ' Chart');
+
+      // 1. Switch to Insert tab
+      await this.moveTo('tab-insert');
+      this.replicaActiveTab.set('insert');
+      await this.delay(200);
+
+      // 2. Click Chart button
+      await this.moveTo('insert-chart');
+      this.replicaChartDialogOpen.set(true);
+      this.replicaChartDialogType.set('column');
+      this.replicaChartTitleInput.set('Chart Title');
+      this.cdr.markForCheck();
+      await this.delay(POST_OPEN_PAUSE_MS);
+
+      // 3. Click the type
+      if (chartType !== 'column') {
+        await this.moveTo('chart-type-' + chartType);
+        this.replicaChartDialogType.set(chartType as any);
+        this.cdr.markForCheck();
+        await this.delay(250);
+      } else {
+        await this.moveTo('chart-type-column');
+        await this.delay(150);
+      }
+
+      // 4. Type title letter by letter into Name / Title field
+      await this.moveTo('chart-title-input');
+      this.replicaChartTitleInput.set('');
+      for (const ch of targetTitle) {
+        this.replicaChartTitleInput.update((v) => v + ch);
+        this.cdr.markForCheck();
+        await this.delay(40);
+      }
+      await this.delay(200);
+
+      // 5. Click Insert
+      await this.moveTo('chart-insert-ok');
+      await this.delay(200);
+      this.replicaChartDialogOpen.set(false);
+      this.cdr.markForCheck();
+
+      // 6. Chart appears in document
+      const fig = document.createElement('figure');
+      fig.className = 'doc-chart';
+      fig.setAttribute('data-element', 'chart');
+      fig.setAttribute('data-chart-type', chartType);
+      fig.setAttribute('data-chart-title', targetTitle);
+      const sampleData = {
+        categories: ['Category 1', 'Category 2', 'Category 3', 'Category 4'],
+        series: [
+          { name: 'Series 1', values: [4.3, 2.5, 3.5, 4.5] },
+          { name: 'Series 2', values: [2.4, 4.4, 1.8, 2.8] },
+          { name: 'Series 3', values: [2.0, 2.0, 3.0, 5.0] },
+        ],
+      };
+      fig.setAttribute('data-chart-data', JSON.stringify(sampleData));
+      fig.setAttribute('contenteditable', 'false');
+      fig.innerHTML = this.renderReplicaChartSvg(chartType, targetTitle);
+      docEl.append(fig);
+      this.hasReplicaChart.set(true);
+      await this.delay(300);
+
+      this.activeAction.set('');
+      return true;
+    }
+
     return false;
+  }
+
+  private renderReplicaChartSvg(type: string, title: string): string {
+    const chartType = (type || 'column').toLowerCase();
+    const t = title || 'Chart Title';
+    const blue = '#4472c4';
+    const orange = '#ed7d31';
+    const green = '#70ad47';
+    const yellow = '#ffc000';
+
+    if (chartType === 'line') {
+      return `
+        <svg viewBox="0 0 240 140" style="width:100%;height:100%;display:block;">
+          <text x="120" y="16" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">${t}</text>
+          <line x1="30" y1="30" x2="225" y2="30" stroke="#e1dfdd" stroke-width="0.8"/>
+          <line x1="30" y1="55" x2="225" y2="55" stroke="#e1dfdd" stroke-width="0.8"/>
+          <line x1="30" y1="80" x2="225" y2="80" stroke="#e1dfdd" stroke-width="0.8"/>
+          <line x1="30" y1="105" x2="225" y2="105" stroke="#8a8886" stroke-width="1"/>
+          <text x="24" y="33" text-anchor="end" font-size="7.5" fill="#666">6</text>
+          <text x="24" y="58" text-anchor="end" font-size="7.5" fill="#666">4</text>
+          <text x="24" y="83" text-anchor="end" font-size="7.5" fill="#666">2</text>
+          <text x="24" y="108" text-anchor="end" font-size="7.5" fill="#666">0</text>
+          <polyline points="45,55 95,85 145,65 195,45" fill="none" stroke="${blue}" stroke-width="2"/>
+          <polyline points="45,85 95,45 145,90 195,75" fill="none" stroke="${orange}" stroke-width="2"/>
+          <polyline points="45,90 95,90 145,70 195,40" fill="none" stroke="${green}" stroke-width="2"/>
+          <text x="45" y="117" text-anchor="middle" font-size="7.5" fill="#666">Cat 1</text>
+          <text x="95" y="117" text-anchor="middle" font-size="7.5" fill="#666">Cat 2</text>
+          <text x="145" y="117" text-anchor="middle" font-size="7.5" fill="#666">Cat 3</text>
+          <text x="195" y="117" text-anchor="middle" font-size="7.5" fill="#666">Cat 4</text>
+          <line x1="60" y1="130" x2="72" y2="130" stroke="${blue}" stroke-width="2"/>
+          <text x="75" y="133" font-size="7.5" fill="currentColor">Series 1</text>
+          <line x1="110" y1="130" x2="122" y2="130" stroke="${orange}" stroke-width="2"/>
+          <text x="125" y="133" font-size="7.5" fill="currentColor">Series 2</text>
+          <line x1="160" y1="130" x2="172" y2="130" stroke="${green}" stroke-width="2"/>
+          <text x="175" y="133" font-size="7.5" fill="currentColor">Series 3</text>
+        </svg>
+      `;
+    }
+
+    if (chartType === 'bar') {
+      return `
+        <svg viewBox="0 0 240 140" style="width:100%;height:100%;display:block;">
+          <text x="120" y="16" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">${t}</text>
+          <line x1="45" y1="28" x2="45" y2="108" stroke="#8a8886" stroke-width="1"/>
+          <line x1="90" y1="28" x2="90" y2="108" stroke="#e1dfdd" stroke-width="0.8"/>
+          <line x1="135" y1="28" x2="135" y2="108" stroke="#e1dfdd" stroke-width="0.8"/>
+          <line x1="180" y1="28" x2="180" y2="108" stroke="#e1dfdd" stroke-width="0.8"/>
+          <line x1="225" y1="28" x2="225" y2="108" stroke="#e1dfdd" stroke-width="0.8"/>
+          <text x="40" y="44" text-anchor="end" font-size="7.5" fill="#666">Cat 1</text>
+          <rect x="45" y="33" width="70" height="4.5" fill="${blue}"/>
+          <rect x="45" y="39" width="45" height="4.5" fill="${orange}"/>
+          <rect x="45" y="45" width="35" height="4.5" fill="${green}"/>
+          <text x="40" y="66" text-anchor="end" font-size="7.5" fill="#666">Cat 2</text>
+          <rect x="45" y="55" width="50" height="4.5" fill="${blue}"/>
+          <rect x="45" y="61" width="80" height="4.5" fill="${orange}"/>
+          <rect x="45" y="67" width="35" height="4.5" fill="${green}"/>
+          <text x="40" y="88" text-anchor="end" font-size="7.5" fill="#666">Cat 3</text>
+          <rect x="45" y="77" width="60" height="4.5" fill="${blue}"/>
+          <rect x="45" y="83" width="35" height="4.5" fill="${orange}"/>
+          <rect x="45" y="89" width="55" height="4.5" fill="${green}"/>
+          <text x="40" y="106" text-anchor="end" font-size="7.5" fill="#666">Cat 4</text>
+          <rect x="45" y="95" width="75" height="4.5" fill="${blue}"/>
+          <rect x="45" y="101" width="50" height="4.5" fill="${orange}"/>
+          <rect x="45" y="107" width="90" height="4.5" fill="${green}"/>
+          <rect x="55" y="125" width="6" height="6" fill="${blue}"/>
+          <text x="64" y="131" font-size="7.5" fill="currentColor">Series 1</text>
+          <rect x="110" y="125" width="6" height="6" fill="${orange}"/>
+          <text x="119" y="131" font-size="7.5" fill="currentColor">Series 2</text>
+          <rect x="165" y="125" width="6" height="6" fill="${green}"/>
+          <text x="174" y="131" font-size="7.5" fill="currentColor">Series 3</text>
+        </svg>
+      `;
+    }
+
+    if (chartType === 'pie') {
+      return `
+        <svg viewBox="0 0 240 140" style="width:100%;height:100%;display:block;">
+          <text x="120" y="16" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">${t}</text>
+          <g transform="translate(120, 68)">
+            <path d="M 0 0 L 0 -45 A 45 45 0 0 1 43 13 Z" fill="${blue}" stroke="#fff" stroke-width="1"/>
+            <path d="M 0 0 L 43 13 A 45 45 0 0 1 5 44 Z" fill="${orange}" stroke="#fff" stroke-width="1"/>
+            <path d="M 0 0 L 5 44 A 45 45 0 0 1 -42 16 Z" fill="${green}" stroke="#fff" stroke-width="1"/>
+            <path d="M 0 0 L -42 16 A 45 45 0 0 1 0 -45 Z" fill="${yellow}" stroke="#fff" stroke-width="1"/>
+          </g>
+          <rect x="25" y="125" width="6" height="6" fill="${blue}"/>
+          <text x="34" y="131" font-size="7.5" fill="currentColor">Cat 1</text>
+          <rect x="75" y="125" width="6" height="6" fill="${orange}"/>
+          <text x="84" y="131" font-size="7.5" fill="currentColor">Cat 2</text>
+          <rect x="125" y="125" width="6" height="6" fill="${green}"/>
+          <text x="134" y="131" font-size="7.5" fill="currentColor">Cat 3</text>
+          <rect x="175" y="125" width="6" height="6" fill="${yellow}"/>
+          <text x="184" y="131" font-size="7.5" fill="currentColor">Cat 4</text>
+        </svg>
+      `;
+    }
+
+    // Default: Column Chart
+    return `
+      <svg viewBox="0 0 240 140" style="width:100%;height:100%;display:block;">
+        <text x="120" y="16" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">${t}</text>
+        <line x1="25" y1="30" x2="225" y2="30" stroke="#e1dfdd" stroke-width="0.8"/>
+        <line x1="25" y1="55" x2="225" y2="55" stroke="#e1dfdd" stroke-width="0.8"/>
+        <line x1="25" y1="80" x2="225" y2="80" stroke="#e1dfdd" stroke-width="0.8"/>
+        <line x1="25" y1="105" x2="225" y2="105" stroke="#8a8886" stroke-width="1"/>
+        <text x="20" y="33" text-anchor="end" font-size="7.5" fill="#666">6</text>
+        <text x="20" y="58" text-anchor="end" font-size="7.5" fill="#666">4</text>
+        <text x="20" y="83" text-anchor="end" font-size="7.5" fill="#666">2</text>
+        <text x="20" y="108" text-anchor="end" font-size="7.5" fill="#666">0</text>
+        <rect x="35" y="45" width="9" height="60" fill="${blue}"/>
+        <rect x="45" y="65" width="9" height="40" fill="${orange}"/>
+        <rect x="55" y="75" width="9" height="30" fill="${green}"/>
+        <text x="50" y="117" text-anchor="middle" font-size="7.5" fill="#666">Cat 1</text>
+        <rect x="80" y="65" width="9" height="40" fill="${blue}"/>
+        <rect x="90" y="40" width="9" height="65" fill="${orange}"/>
+        <rect x="100" y="75" width="9" height="30" fill="${green}"/>
+        <text x="95" y="117" text-anchor="middle" font-size="7.5" fill="#666">Cat 2</text>
+        <rect x="125" y="55" width="9" height="50" fill="${blue}"/>
+        <rect x="135" y="78" width="9" height="27" fill="${orange}"/>
+        <rect x="145" y="60" width="9" height="45" fill="${green}"/>
+        <text x="140" y="117" text-anchor="middle" font-size="7.5" fill="#666">Cat 3</text>
+        <rect x="170" y="42" width="9" height="63" fill="${blue}"/>
+        <rect x="180" y="65" width="9" height="40" fill="${orange}"/>
+        <rect x="190" y="32" width="9" height="73" fill="${green}"/>
+        <text x="185" y="117" text-anchor="middle" font-size="7.5" fill="#666">Cat 4</text>
+        <rect x="55" y="126" width="6" height="6" fill="${blue}"/>
+        <text x="64" y="132" font-size="7.5" fill="currentColor">Series 1</text>
+        <rect x="110" y="126" width="6" height="6" fill="${orange}"/>
+        <text x="119" y="132" font-size="7.5" fill="currentColor">Series 2</text>
+        <rect x="165" y="126" width="6" height="6" fill="${green}"/>
+        <text x="174" y="132" font-size="7.5" fill="currentColor">Series 3</text>
+      </svg>
+    `;
   }
 }
 

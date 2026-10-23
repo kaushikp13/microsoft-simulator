@@ -77,13 +77,6 @@
       Help
     </button>
 
-    <button type="button" class="tab-btn disabled nitro-tab" disabled role="tab" aria-selected="false">
-      Nitro Pro
-    </button>
-
-    <button type="button" class="tab-btn disabled" disabled role="tab" aria-selected="false">
-      Power Pivot
-    </button>
 
     <!-- Menus Search Box (Excel style) -->
     <div class="ribbon-search-box">
@@ -139,6 +132,10 @@
       (quickSort)="($event === 'asc' ? sortAsc.emit() : sortDesc.emit())"
       (openSortDialog)="openSortDialog.emit()"
       (toggleFilter)="toggleFilter.emit()"
+      (insertRow)="insertRow.emit()"
+      (insertColumn)="insertColumn.emit()"
+      (deleteRow)="deleteRow.emit()"
+      (deleteColumn)="deleteColumn.emit()"
     ></app-home-tab>
 
     <app-insert-tab
