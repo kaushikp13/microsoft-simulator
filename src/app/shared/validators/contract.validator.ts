@@ -1,4 +1,5 @@
 import { ActivityPayload, AppKind } from '../models/activity.types';
+import { COLORS } from '../utils/editor.utils';
 
 export const GOAL_TYPES: Record<AppKind, string[]> = {
   word: [
@@ -29,6 +30,7 @@ export const GOAL_TYPES: Record<AppKind, string[]> = {
     'dataValidation',
     'noDuplicates',
     'action',
+    'sheets',
   ],
   powerpoint: [
     'slideText',
@@ -262,6 +264,45 @@ export function validateActivity(kind: AppKind, data: unknown): ActivityPayload 
       }
 
       if (kind === 'excel') {
+        const allowedKeys: Record<string, string[]> = {
+          cellValue: ['type', 'cells'],
+          cellFormula: ['type', 'cell', 'function', 'references', 'equals', 'absolute'],
+          cellFormat: [
+            'type',
+            'range',
+            'cell',
+            'bold',
+            'italic',
+            'underline',
+            'fontSize',
+            'fontFamily',
+            'numberFormat',
+            'align',
+            'textColor',
+            'fillColor',
+            'color',
+          ],
+          sorted: ['type', 'range', 'byColumn', 'order', 'hasHeader'],
+          filter: ['type', 'range', 'column', 'condition', 'value', 'value2'],
+          chart: ['type', 'chartType', 'range', 'title', 'count'],
+          pivotTable: ['type', 'range', 'rowsField', 'valuesField', 'summarize'],
+          comment: ['type', 'cell', 'contains'],
+          conditionalFormat: ['type', 'range', 'condition', 'value', 'value2', 'fillColor'],
+          dataValidation: ['type', 'range', 'allowed'],
+          noDuplicates: ['type', 'range'],
+          action: ['type', 'action', 'range', 'cell'],
+          sheets: ['type', 'contains', 'count', 'names'],
+        };
+
+        const allowed = allowedKeys[goalType];
+        if (allowed) {
+          for (const key of Object.keys(g)) {
+            if (!allowed.includes(key)) {
+              throw new Error(`Unknown setting "${key}" in ${goalType} goal.`);
+            }
+          }
+        }
+
         for (const key of ['cell', 'range']) {
           if (g[key]) validateCellRange(g[key]);
         }
@@ -271,6 +312,61 @@ export function validateActivity(kind: AppKind, data: unknown): ActivityPayload 
             throw new Error('cellValue.cells must be an object.');
           }
           Object.keys(cells).forEach(parseCellAddress);
+        }
+
+        if (g['numberFormat'] !== undefined) {
+          const allowedNumberFormats = ['automatic', 'percent', 'currency', 'date'];
+          if (!allowedNumberFormats.includes(g['numberFormat'])) {
+            throw new Error(`numberFormat must be one of: ${allowedNumberFormats.join(', ')}.`);
+          }
+        }
+
+        const allowedColors = Object.keys(COLORS);
+        for (const colorKey of ['textColor', 'fillColor', 'color']) {
+          if (g[colorKey] !== undefined && !allowedColors.includes(g[colorKey])) {
+            throw new Error(`${colorKey} must be one of the 20 named colors.`);
+          }
+        }
+
+        if (goalType === 'chart' && g['chartType'] !== undefined) {
+          const allowedChartTypes = ['column', 'bar', 'line', 'pie'];
+          if (!allowedChartTypes.includes(g['chartType'])) {
+            throw new Error(`chart.chartType must be one of: ${allowedChartTypes.join(', ')}.`);
+          }
+        }
+
+        if (goalType === 'pivotTable' && g['summarize'] !== undefined) {
+          const allowedSummarize = ['SUM', 'COUNT', 'AVERAGE'];
+          if (!allowedSummarize.includes(g['summarize'])) {
+            throw new Error(`pivotTable.summarize must be one of: ${allowedSummarize.join(', ')}.`);
+          }
+        }
+
+        if ((goalType === 'filter' || goalType === 'conditionalFormat') && g['condition'] !== undefined) {
+          const allowedConditions = ['equals', 'greaterThan', 'lessThan', 'between', 'contains', 'isEmpty'];
+          if (!allowedConditions.includes(g['condition'])) {
+            throw new Error(`${goalType}.condition must be one of: ${allowedConditions.join(', ')}.`);
+          }
+        }
+
+        if (goalType === 'sheets') {
+          if (g['contains'] === undefined && g['count'] === undefined && g['names'] === undefined) {
+            throw new Error('sheets needs contains, count or names.');
+          }
+          if (g['contains'] !== undefined && (typeof g['contains'] !== 'string' || !g['contains'].trim())) {
+            throw new Error('sheets.contains must be a non-empty string.');
+          }
+          if (g['count'] !== undefined && (!Number.isInteger(g['count']) || g['count'] <= 0)) {
+            throw new Error('sheets.count must be a positive integer.');
+          }
+          if (
+            g['names'] !== undefined &&
+            (!Array.isArray(g['names']) ||
+              g['names'].length === 0 ||
+              g['names'].some((n: unknown) => typeof n !== 'string' || !n.trim()))
+          ) {
+            throw new Error('sheets.names must be a non-empty array of non-empty strings.');
+          }
         }
       }
     }
@@ -341,6 +437,24 @@ export function validateActivity(kind: AppKind, data: unknown): ActivityPayload 
           (!s.cells || typeof s.cells !== 'object' || Array.isArray(s.cells))
         ) {
           throw new Error('startingSheet.cells must be an object.');
+        }
+
+        if (kind === 'excel' && s.formats && typeof s.formats === 'object') {
+          const allowedNumberFormats = ['automatic', 'percent', 'currency', 'date'];
+          const allowedColors = Object.keys(COLORS);
+          for (const fmt of Object.values(s.formats)) {
+            if (fmt && typeof fmt === 'object') {
+              const f = fmt as Record<string, any>;
+              if (f['numberFormat'] !== undefined && !allowedNumberFormats.includes(f['numberFormat'])) {
+                throw new Error(`numberFormat must be one of: ${allowedNumberFormats.join(', ')}.`);
+              }
+              for (const colorKey of ['textColor', 'fillColor', 'color']) {
+                if (f[colorKey] !== undefined && !allowedColors.includes(f[colorKey])) {
+                  throw new Error(`${colorKey} must be one of the 20 named colors.`);
+                }
+              }
+            }
+          }
         }
 
         if (

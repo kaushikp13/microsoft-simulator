@@ -93,6 +93,27 @@ export class ExcelEditorComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('movableGroup') movableGroupRef?: ElementRef<HTMLElement>;
   @ViewChild(GridComponent) gridComponent?: GridComponent;
   @ViewChild(FormulaBarComponent) formulaBarComponent?: FormulaBarComponent;
+  @ViewChild('validationOkBtn') validationOkBtn?: ElementRef<HTMLButtonElement>;
+
+  readonly validationAlert = signal<{ allowed: string[] } | null>(null);
+
+  showValidationAlert(allowed: string[]): void {
+    this.validationAlert.set({ allowed });
+    this.cdr.detectChanges();
+    setTimeout(() => {
+      this.validationOkBtn?.nativeElement?.focus();
+    }, 0);
+  }
+
+  closeValidationAlert(): void {
+    this.validationAlert.set(null);
+    this.cdr.detectChanges();
+    this.focusGrid();
+  }
+
+  onValidationError(event: { allowed: string[] }): void {
+    this.showValidationAlert(event.allowed);
+  }
 
   commitPendingEdit(): void {
     const gridInput = this.gridComponent?.cellEditorInputRef?.nativeElement;
@@ -116,10 +137,8 @@ export class ExcelEditorComponent implements OnInit, AfterViewInit, OnDestroy {
     if (dv && dv.rejectInvalid && val !== '') {
       const isAllowed = dv.allowed.some((a) => a.trim().toLowerCase() === val.trim().toLowerCase());
       if (!isAllowed) {
-        alert(
-          `The value you entered doesn't match the data validation restrictions defined for this cell. Allowed: ${dv.allowed.join(', ')}`
-        );
         this.state.isEditing.set(false);
+        this.showValidationAlert(dv.allowed);
         this.cdr.detectChanges();
         return;
       }
@@ -194,29 +213,19 @@ export class ExcelEditorComponent implements OnInit, AfterViewInit, OnDestroy {
     return this.state.sheets().findIndex((s) => s.id === id);
   }
 
-  // Zoom Controls
+  // Zoom Controls (disabled per specification)
   readonly zoomLevel = signal<number>(100);
 
   zoomIn(): void {
-    const current = this.zoomLevel();
-    if (current < 200) {
-      this.zoomLevel.set(Math.min(200, current + 10));
-    }
+    // Disabled per specification
   }
 
   zoomOut(): void {
-    const current = this.zoomLevel();
-    if (current > 50) {
-      this.zoomLevel.set(Math.max(50, current - 10));
-    }
+    // Disabled per specification
   }
 
-  onZoomSliderChange(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const val = Number(input.value);
-    if (!isNaN(val) && val >= 50 && val <= 200) {
-      this.zoomLevel.set(val);
-    }
+  onZoomSliderChange(_event: Event): void {
+    // Disabled per specification
   }
 
   // Subscriptions & Timers
@@ -602,6 +611,12 @@ export class ExcelEditorComponent implements OnInit, AfterViewInit, OnDestroy {
       this.state.selectCell(clean);
       this.actionLogger.log('goToCell', clean);
     }
+    this.gridComponent?.syncSelection(clean);
+    this.gridComponent?.scrollToActiveCell();
+    this.focusGrid();
+    setTimeout(() => {
+      this.focusGrid();
+    }, 10);
   }
 
   // Formula bar and cell editing
@@ -762,6 +777,14 @@ export class ExcelEditorComponent implements OnInit, AfterViewInit, OnDestroy {
     this.closeSheetContextMenu();
     this.editingSheetId.set(sheetId);
     this.sheetRenameValue.set(currentName);
+    this.cdr.detectChanges();
+    setTimeout(() => {
+      const el = document.querySelector<HTMLInputElement>('.sheet-rename-input');
+      if (el) {
+        el.focus();
+        el.select();
+      }
+    }, 0);
   }
 
   commitRenameSheet(): void {
@@ -1095,7 +1118,47 @@ export class ExcelEditorComponent implements OnInit, AfterViewInit, OnDestroy {
     this.commitPendingEdit();
     this.history.push(this.state.getSnapshot());
     this.state.addPivotTable(pt);
+    this.autofitPivotColumns(pt);
     this.closeDialog('pivot');
+  }
+
+  private autofitPivotColumns(pt: PivotTableItem): void {
+    const target = parseAddress(pt.targetCell || 'D1') || { row: 0, col: 3 };
+    const col0Letter = indexToColLetter(target.col);
+    const col1Letter = indexToColLetter(target.col + 1);
+
+    const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+    const ctx = canvas?.getContext('2d');
+    const measure = (text: string, bold: boolean): number => {
+      if (!ctx) return text.length * 8;
+      ctx.font = `${bold ? '600' : '400'} 10pt "Segoe UI", Arial, sans-serif`;
+      return ctx.measureText(text).width;
+    };
+    const formatNum = (val: any): string => {
+      const n = Number(val);
+      if (isNaN(n)) return String(val ?? '');
+      return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
+    };
+
+    let maxW0 = Math.max(measure(pt.headers.rowLabel || 'Row Labels', true), measure('Grand Total', true));
+    for (const r of pt.rows) maxW0 = Math.max(maxW0, measure(String(r.rowLabel ?? ''), false));
+
+    let maxW1 = Math.max(measure(pt.headers.valueLabel || '', true), measure(formatNum(pt.grandTotal), true));
+    for (const r of pt.rows) maxW1 = Math.max(maxW1, measure(formatNum(r.value), false));
+
+    const curWidths = this.state.columnWidths();
+    const cur0 = curWidths.get(col0Letter) || 84;
+    const cur1 = curWidths.get(col1Letter) || 84;
+    const next0 = Math.max(cur0, Math.ceil(maxW0 + 24));
+    const next1 = Math.max(cur1, Math.ceil(maxW1 + 24));
+
+    if (next0 !== cur0 || next1 !== cur1) {
+      const nextMap = new Map(curWidths);
+      nextMap.set(col0Letter, next0);
+      nextMap.set(col1Letter, next1);
+      this.state.columnWidths.set(nextMap);
+      this.cdr.markForCheck();
+    }
   }
 
   onSaveComment(data: { cell: string; text: string }): void {
@@ -1280,7 +1343,35 @@ export class ExcelEditorComponent implements OnInit, AfterViewInit, OnDestroy {
 
   @HostListener('window:keydown', ['$event'])
   onWindowKeyDown(event: KeyboardEvent): void {
+    if (this.validationAlert()) {
+      if (event.key === 'Enter' || event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        this.closeValidationAlert();
+        return;
+      }
+    }
     if (this.bridge.isPaused() || this.isCompleted()) return;
+    if (this.state.selectedPivotTableId() && !this.state.isEditing()) {
+      const target = event.target as HTMLElement | null;
+      const isInput =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable);
+      if (!isInput && (event.key === 'Delete' || event.key === 'Backspace')) {
+        event.preventDefault();
+        event.stopPropagation();
+        const ptId = this.state.selectedPivotTableId()!;
+        const pt = this.state.pivotTables().find((p) => p.id === ptId);
+        const targetCell = pt?.targetCell || 'A1';
+        this.history.push(this.state.getSnapshot());
+        this.state.deletePivotTable(ptId);
+        this.state.selectCell(targetCell);
+        this.cdr.markForCheck();
+        return;
+      }
+    }
     if ((event.ctrlKey || event.metaKey) && !this.state.isEditing()) {
       const target = event.target as HTMLElement | null;
       if (

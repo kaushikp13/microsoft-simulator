@@ -44,6 +44,9 @@ export class ExcelStateService {
   // Column widths: map of "A" -> width in px
   readonly columnWidths = signal<Map<string, number>>(new Map());
 
+  // Row heights: map of row index (0-indexed) -> height in px
+  readonly rowHeights = signal<Map<number, number>>(new Map());
+
   // Selection state
   readonly activeCell = signal<string>('A1');
   readonly selectedRange = signal<string>('A1');
@@ -64,6 +67,9 @@ export class ExcelStateService {
 
   // Selected chart (for delete / move)
   readonly selectedChartId = signal<string | null>(null);
+
+  // Selected pivot table (for delete / move)
+  readonly selectedPivotTableId = signal<string | null>(null);
 
   // Multiple Sheets
   readonly sheets = signal<SheetTabInfo[]>([{ id: 'sheet1', name: 'Sheet1' }]);
@@ -93,6 +99,17 @@ export class ExcelStateService {
       }
     }
     this.columnWidths.set(newWidths);
+
+    const newHeights = new Map<number, number>();
+    if (sheet?.rowHeights && typeof sheet.rowHeights === 'object') {
+      for (const [r, h] of Object.entries(sheet.rowHeights)) {
+        const rowIdx = Number(r);
+        if (!isNaN(rowIdx)) {
+          newHeights.set(rowIdx, Number(h));
+        }
+      }
+    }
+    this.rowHeights.set(newHeights);
 
     // Load initial formats
     if (sheet?.formats && typeof sheet.formats === 'object') {
@@ -1038,6 +1055,24 @@ export class ExcelStateService {
     this.pivotTables.update((list) => [...list, pt]);
   }
 
+  deletePivotTable(id: string): void {
+    this.pivotTables.update((list) => list.filter((p) => p.id !== id));
+    if (this.selectedPivotTableId() === id) {
+      this.selectedPivotTableId.set(null);
+    }
+  }
+
+  movePivotTable(id: string, targetCell: string): boolean {
+    const list = this.pivotTables();
+    const idx = list.findIndex((p) => p.id === id);
+    if (idx === -1) return false;
+    const updated = { ...list[idx], targetCell: targetCell.toUpperCase() };
+    const nextList = [...list];
+    nextList[idx] = updated;
+    this.pivotTables.set(nextList);
+    return true;
+  }
+
   setComment(cellAddr: string, text: string): void {
     const norm = cellAddr.toUpperCase().replace(/\$/g, '');
     const cur = new Map(this.comments());
@@ -1085,6 +1120,11 @@ export class ExcelStateService {
       widthsObj[col] = w;
     }
 
+    const heightsObj: Record<number, number> = {};
+    for (const [row, h] of this.rowHeights().entries()) {
+      heightsObj[row] = h;
+    }
+
     const commentsObj: Record<string, string> = {};
     for (const [addr, comm] of this.comments().entries()) {
       commentsObj[addr] = comm;
@@ -1094,6 +1134,7 @@ export class ExcelStateService {
       cells: cellsObj,
       formats: formatsObj,
       columnWidths: widthsObj,
+      rowHeights: heightsObj,
       charts: this.charts().map((c) => ({ ...c })),
       comments: commentsObj,
       pivotTables: this.pivotTables().map((pt) => ({ ...pt, rows: [...pt.rows] })),
@@ -1111,6 +1152,7 @@ export class ExcelStateService {
       cells: snap.cells,
       formats: snap.formats,
       columnWidths: snap.columnWidths,
+      rowHeights: snap.rowHeights,
     });
 
     const commMap = new Map<string, string>();
@@ -1141,6 +1183,7 @@ export class ExcelStateService {
         cells: {},
         formats: {},
         columnWidths: {},
+        rowHeights: {},
         charts: [],
         comments: {},
         pivotTables: [],
@@ -1225,10 +1268,24 @@ export class ExcelStateService {
     const oldCells = this.cells();
     const oldFormats = this.cellFormats();
     const oldComments = this.comments();
+    const oldHeights = this.rowHeights();
 
     const newCells = new Map<string, CellData>();
     const newFormats = new Map<string, CellFormat>();
     const newComments = new Map<string, string>();
+    const newHeights = new Map<number, number>();
+
+    for (let r = 0; r < this.maxRows; r++) {
+      const h = oldHeights.get(r);
+      if (h !== undefined) {
+        if (r < targetRow) {
+          newHeights.set(r, h);
+        } else if (r + 1 < this.maxRows) {
+          newHeights.set(r + 1, h);
+        }
+      }
+    }
+    this.rowHeights.set(newHeights);
 
     for (const [addr, cell] of oldCells.entries()) {
       const p = parseAddress(addr);
@@ -1320,10 +1377,24 @@ export class ExcelStateService {
     const oldCells = this.cells();
     const oldFormats = this.cellFormats();
     const oldComments = this.comments();
+    const oldHeights = this.rowHeights();
 
     const newCells = new Map<string, CellData>();
     const newFormats = new Map<string, CellFormat>();
     const newComments = new Map<string, string>();
+    const newHeights = new Map<number, number>();
+
+    for (let r = 0; r < this.maxRows; r++) {
+      const h = oldHeights.get(r);
+      if (h !== undefined) {
+        if (r < targetRow) {
+          newHeights.set(r, h);
+        } else if (r > targetRow) {
+          newHeights.set(r - 1, h);
+        }
+      }
+    }
+    this.rowHeights.set(newHeights);
 
     for (const [addr, cell] of oldCells.entries()) {
       const p = parseAddress(addr);
@@ -1677,5 +1748,146 @@ export class ExcelStateService {
     }
 
     this.restoreSheetOnly(snap);
+  }
+
+  /**
+   * Moves or copies a range of cells to a new location.
+   * If copy is false (MOVE): source cells, formats, and comments are cleared; formulas keep original cell references.
+   * If copy is true (COPY): source remains intact; formulas shift relative references via formulaEngine.shiftFormula.
+   */
+  moveOrCopyRange(sourceRange: string, targetTopLeft: string, copy: boolean): void {
+    const parsedSource = parseRange(sourceRange);
+    if (!parsedSource) return;
+
+    const parsedTarget = parseAddress(targetTopLeft);
+    if (!parsedTarget) return;
+
+    const numRows = parsedSource.endRow - parsedSource.startRow + 1;
+    const numCols = parsedSource.endCol - parsedSource.startCol + 1;
+    const targetStartRow = parsedTarget.row;
+    const targetStartCol = parsedTarget.col;
+    const rowDelta = targetStartRow - parsedSource.startRow;
+    const colDelta = targetStartCol - parsedSource.startCol;
+
+    if (rowDelta === 0 && colDelta === 0) return;
+
+    // 1. Gather all items from the source range
+    interface SourceItem {
+      rOffset: number;
+      cOffset: number;
+      cell?: CellData;
+      format?: CellFormat;
+      comment?: string;
+    }
+
+    const items: SourceItem[] = [];
+    const curCells = new Map(this.cells());
+    const curFormats = new Map(this.cellFormats());
+    const curComments = new Map(this.comments());
+
+    for (let r = 0; r < numRows; r++) {
+      for (let c = 0; c < numCols; c++) {
+        const srcRow = parsedSource.startRow + r;
+        const srcCol = parsedSource.startCol + c;
+        const srcAddr = formatAddress({ row: srcRow, col: srcCol });
+
+        const cell = curCells.get(srcAddr);
+        const fmt = curFormats.get(srcAddr);
+        const comm = curComments.get(srcAddr);
+
+        items.push({
+          rOffset: r,
+          cOffset: c,
+          cell: cell ? { ...cell } : undefined,
+          format: fmt ? { ...fmt, border: fmt.border ? { ...fmt.border } : undefined } : undefined,
+          comment: comm,
+        });
+      }
+    }
+
+    // 2. If MOVE (!copy), clear the source cells, formats, and comments
+    if (!copy) {
+      for (let r = 0; r < numRows; r++) {
+        for (let c = 0; c < numCols; c++) {
+          const srcRow = parsedSource.startRow + r;
+          const srcCol = parsedSource.startCol + c;
+          const srcAddr = formatAddress({ row: srcRow, col: srcCol });
+          curCells.delete(srcAddr);
+          curFormats.delete(srcAddr);
+          curComments.delete(srcAddr);
+        }
+      }
+    }
+
+    // 3. Clear destination rectangle to replace existing destination cells
+    for (let r = 0; r < numRows; r++) {
+      for (let c = 0; c < numCols; c++) {
+        const destRow = targetStartRow + r;
+        const destCol = targetStartCol + c;
+        if (destRow < this.maxRows && destCol < this.maxCols) {
+          const destAddr = formatAddress({ row: destRow, col: destCol });
+          curCells.delete(destAddr);
+          curFormats.delete(destAddr);
+          curComments.delete(destAddr);
+        }
+      }
+    }
+
+    // 4. Write source items to destination
+    for (const item of items) {
+      const destRow = targetStartRow + item.rOffset;
+      const destCol = targetStartCol + item.cOffset;
+      if (destRow >= this.maxRows || destCol >= this.maxCols) continue;
+
+      const destAddr = formatAddress({ row: destRow, col: destCol });
+
+      if (item.cell) {
+        let rawToSet: string | number = item.cell.raw;
+        let formulaToSet: string | undefined = item.cell.formula;
+
+        if (item.cell.formula) {
+          if (copy) {
+            formulaToSet = this.formulaEngine.shiftFormula(item.cell.formula, rowDelta, colDelta);
+            rawToSet = formulaToSet;
+          } else {
+            formulaToSet = item.cell.formula;
+            rawToSet = item.cell.raw;
+          }
+        }
+
+        if (formulaToSet) {
+          curCells.set(destAddr, {
+            raw: rawToSet,
+            formula: formulaToSet,
+            value: '',
+            displayValue: '',
+            format: item.format,
+          });
+        } else {
+          curCells.set(destAddr, {
+            raw: rawToSet,
+            value: item.cell.value,
+            displayValue: item.cell.displayValue,
+            format: item.format,
+          });
+        }
+      }
+
+      if (item.format) {
+        curFormats.set(destAddr, {
+          ...item.format,
+          border: item.format.border ? { ...item.format.border } : undefined,
+        });
+      }
+
+      if (item.comment) {
+        curComments.set(destAddr, item.comment);
+      }
+    }
+
+    this.cells.set(curCells);
+    this.cellFormats.set(curFormats);
+    this.comments.set(curComments);
+    this.recalculateAll();
   }
 }
