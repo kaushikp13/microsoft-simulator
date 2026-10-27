@@ -105,6 +105,7 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
   private chartDragStartY = 0;
   private chartInitialX = 0;
   private chartInitialY = 0;
+  private chartMoveSnapshot: SheetSnapshot | null = null;
 
   // PivotTable dragging & notification state
   readonly isDraggingPivot = signal<boolean>(false);
@@ -458,6 +459,14 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
     if (event.button !== 0) return; // only left click
 
     if (this.state.isEditing()) {
+      const addr = formatAddress({ row, col });
+      const target = event.target as HTMLElement | null;
+      if (
+        addr === this.state.editingAddress() ||
+        (target && (target.classList.contains('inline-cell-editor') || target.closest('.inline-cell-editor')))
+      ) {
+        return;
+      }
       this.commitEdit(0, 0);
     }
 
@@ -474,6 +483,7 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
       this.selectionLead = { row, col };
       this.rangeAnchorCoord = { row, col };
       this.isSelectingRange = true;
+      this.actionLogger.log('goToCell', addr);
       this.actionLogger.log('selectRange', addr);
     }
 
@@ -485,7 +495,6 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
       this.selectionLead = { row, col };
       const range = this.formatBoundingRange(this.rangeAnchorCoord, { row, col });
       this.state.selectRange(range);
-      this.actionLogger.log('selectRange', range);
       this.hoveredCommentAddr.set(null);
       this.hoveredComment.set(null);
       return;
@@ -556,9 +565,24 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
       this.rowResizeSnapshot = null;
     }
 
-    this.isSelectingRange = false;
-    this.isDraggingChart = false;
-    this.draggedChartId = null;
+    if (this.isSelectingRange) {
+      this.isSelectingRange = false;
+      const curRange = this.state.selectedRange();
+      if (curRange && curRange.includes(':')) {
+        this.actionLogger.log('selectRange', curRange);
+      }
+    }
+    if (this.isDraggingChart) {
+      this.isDraggingChart = false;
+      if (this.draggedChartId) {
+        const chart = this.state.charts().find((c) => c.id === this.draggedChartId);
+        if (chart && (chart.x !== this.chartInitialX || chart.y !== this.chartInitialY) && this.chartMoveSnapshot) {
+          this.history.push(this.chartMoveSnapshot);
+        }
+      }
+      this.draggedChartId = null;
+      this.chartMoveSnapshot = null;
+    }
 
     if (this.isDraggingSelectionBorder) {
       const drag = this.dragMoveState();
@@ -687,6 +711,7 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
         this.state.selectCell(nextAddr);
         this.selectionAnchor = { row: nextR, col: nextC };
         this.selectionLead = { row: nextR, col: nextC };
+        this.actionLogger.log('goToCell', nextAddr);
       }
     } else {
       const p = parseAddress(addr);
@@ -829,24 +854,30 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
       }
       if (key === 'z') {
         event.preventDefault();
-        const prev = this.history.undo(this.state.getSnapshot());
-        if (prev) this.state.restoreSnapshot(prev);
+        event.stopPropagation();
+        if (event.shiftKey) {
+          const next = this.history.redo(this.state.getSnapshot());
+          if (next) this.state.restoreSnapshot(next);
+        } else {
+          const prev = this.history.undo(this.state.getSnapshot());
+          if (prev) this.state.restoreSnapshot(prev);
+        }
         return;
       }
       if (key === 'y') {
         event.preventDefault();
+        event.stopPropagation();
         const next = this.history.redo(this.state.getSnapshot());
         if (next) this.state.restoreSnapshot(next);
         return;
       }
       if (key === 'c') {
-        event.preventDefault();
         this.clipboard.copy(this.state.selectedRange());
         return;
       }
       if (key === 'x') {
-        event.preventDefault();
         if (this.isPivotBlocked()) {
+          event.preventDefault();
           this.showPivotMessage('Cannot change this part of a PivotTable report.');
           return;
         }
@@ -854,29 +885,25 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
         return;
       }
       if (key === 'v') {
-        event.preventDefault();
-        if (this.isPivotBlocked()) {
-          this.showPivotMessage('Cannot change this part of a PivotTable report.');
-          return;
-        }
-        this.history.push(this.state.getSnapshot());
-        this.clipboard.paste(this.state.activeCell());
         return;
       }
       if (key === 'b') {
         event.preventDefault();
+        this.history.push(this.state.getSnapshot());
         const fmt = this.state.cellFormats().get(this.state.activeCell());
         this.state.formatSelection({ bold: !fmt?.bold });
         return;
       }
       if (key === 'i') {
         event.preventDefault();
+        this.history.push(this.state.getSnapshot());
         const fmt = this.state.cellFormats().get(this.state.activeCell());
         this.state.formatSelection({ italic: !fmt?.italic });
         return;
       }
       if (key === 'u') {
         event.preventDefault();
+        this.history.push(this.state.getSnapshot());
         const fmt = this.state.cellFormats().get(this.state.activeCell());
         this.state.formatSelection({ underline: !fmt?.underline });
         return;
@@ -927,6 +954,7 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
           this.state.selectCell(nextAddr);
           this.selectionAnchor = { ...target };
           this.selectionLead = { ...target };
+          this.actionLogger.log('goToCell', nextAddr);
           this.scrollToActiveCell();
         }
         return;
@@ -942,6 +970,7 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
         this.state.selectCell(nextAddr);
         this.selectionAnchor = { row: cur.row, col: 0 };
         this.selectionLead = { row: cur.row, col: 0 };
+        this.actionLogger.log('goToCell', nextAddr);
         this.scrollToActiveCell();
       }
       return;
@@ -958,6 +987,7 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
         this.state.selectCell(nextAddr);
         this.selectionAnchor = { row: targetRow, col: cur.col };
         this.selectionLead = { row: targetRow, col: cur.col };
+        this.actionLogger.log('goToCell', nextAddr);
         this.scrollToActiveCell();
       }
       return;
@@ -974,6 +1004,7 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
         this.state.selectCell(nextAddr);
         this.selectionAnchor = { row: targetRow, col: cur.col };
         this.selectionLead = { row: targetRow, col: cur.col };
+        this.actionLogger.log('goToCell', nextAddr);
         this.scrollToActiveCell();
       }
       return;
@@ -1013,6 +1044,7 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
         return;
       }
       if (this.state.selectedChartId()) {
+        this.history.push(this.state.getSnapshot());
         this.state.deleteChart(this.state.selectedChartId()!);
         return;
       }
@@ -1034,6 +1066,100 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
       }
       this.startEditing(this.state.activeCell(), event.key, 'type');
     }
+  }
+
+  @HostListener('copy', ['$event'])
+  onCopy(event: ClipboardEvent): void {
+    if (this.state.isEditing()) return;
+    if (this.bridge.isPaused() || this.isCompleted) return;
+    if (!event.clipboardData) return;
+    const text = this.getSelectedRangeText();
+    event.preventDefault();
+    event.clipboardData.setData('text/plain', text);
+    this.clipboard.lastCopiedText = text;
+  }
+
+  @HostListener('cut', ['$event'])
+  onCut(event: ClipboardEvent): void {
+    if (this.state.isEditing()) return;
+    if (this.bridge.isPaused() || this.isCompleted) return;
+    if (!event.clipboardData) return;
+    if (this.isPivotBlocked()) {
+      event.preventDefault();
+      this.showPivotMessage('Cannot change this part of a PivotTable report.');
+      return;
+    }
+    const text = this.getSelectedRangeText();
+    event.preventDefault();
+    event.clipboardData.setData('text/plain', text);
+    this.clipboard.lastCopiedText = text;
+  }
+
+  @HostListener('paste', ['$event'])
+  onPaste(event: ClipboardEvent): void {
+    if (this.state.isEditing()) return;
+    if (this.bridge.isPaused() || this.isCompleted) return;
+    if (!event.clipboardData) return;
+
+    const rawText = event.clipboardData.getData('text/plain');
+    if (rawText === undefined || rawText === null) return;
+    event.preventDefault();
+
+    const normalize = (s: string) => s.replace(/\r\n/g, '\n').replace(/\n$/, '');
+    const text = rawText;
+    const lastCopied = this.clipboard.lastCopiedText;
+
+    if (this.clipboard.hasData() && lastCopied !== null && normalize(text) === normalize(lastCopied)) {
+      if (this.isPivotBlocked()) {
+        this.showPivotMessage('Cannot change this part of a PivotTable report.');
+        return;
+      }
+      this.history.push(this.state.getSnapshot());
+      this.clipboard.paste(this.state.activeCell());
+      this.cdr.markForCheck();
+      return;
+    }
+
+    if (text !== '') {
+      if (this.isPivotBlocked()) {
+        this.showPivotMessage('Cannot change this part of a PivotTable report.');
+        return;
+      }
+      this.history.push(this.state.getSnapshot());
+      const cur = parseAddress(this.state.activeCell());
+      if (!cur) return;
+
+      const normalized = normalize(text);
+      const rows = normalized.split('\n');
+      for (let rIdx = 0; rIdx < rows.length; rIdx++) {
+        const row = cur.row + rIdx;
+        if (row >= this.state.maxRows) break;
+        const cols = rows[rIdx].split('\t');
+        for (let cIdx = 0; cIdx < cols.length; cIdx++) {
+          const col = cur.col + cIdx;
+          if (col >= this.state.maxCols) break;
+          const destAddr = formatAddress({ row, col });
+          this.state.setCellValue(destAddr, cols[cIdx]);
+        }
+      }
+      this.actionLogger.log('paste', this.state.activeCell());
+      this.cdr.markForCheck();
+    }
+  }
+
+  private getSelectedRangeText(): string {
+    const range = this.state.selectedRange();
+    const parsed = parseRange(range);
+    if (!parsed) return '';
+    const lines: string[] = [];
+    for (let r = parsed.startRow; r <= parsed.endRow; r++) {
+      const rowVals: string[] = [];
+      for (let c = parsed.startCol; c <= parsed.endCol; c++) {
+        rowVals.push(this.getCellDisplay(r, c));
+      }
+      lines.push(rowVals.join('\t'));
+    }
+    return lines.join('\n');
   }
 
   private handleArrowKey(dRow: number, dCol: number, isShift: boolean): void {
@@ -1060,6 +1186,7 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
     this.state.selectCell(nextAddr);
     this.selectionAnchor = { row: r, col: c };
     this.selectionLead = { row: r, col: c };
+    this.actionLogger.log('goToCell', nextAddr);
     this.scrollToActiveCell();
   }
 
@@ -1204,7 +1331,8 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
     if (ctx) {
       ctx.font = '500 11px "Segoe UI", Arial, sans-serif';
       let headerWidth = ctx.measureText(letter).width + 16;
-      if (this.isHeaderCellWithFilter(0, colIndex)) {
+      const filterHeaderRow = this.state.filter()?.headerRow ?? 0;
+      if (this.isHeaderCellWithFilter(filterHeaderRow, colIndex)) {
         headerWidth += 26; // filter button width + spacing
       }
       maxContentWidth = Math.max(maxContentWidth, headerWidth);
@@ -1230,6 +1358,7 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
         let cellWidth = ctx.measureText(text).width + 18;
         if (cell?.comment) cellWidth += 6;
         if (this.hasValidation(r, colIndex)) cellWidth += 18;
+        if (this.isHeaderCellWithFilter(r, colIndex)) cellWidth += 26;
         maxContentWidth = Math.max(maxContentWidth, cellWidth);
       }
     }
@@ -1243,6 +1372,7 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
         if (span && span.scrollWidth > 0) {
           let cellWidth = span.scrollWidth + 16;
           if (this.hasValidation(r, colIndex)) cellWidth += 18;
+          if (this.isHeaderCellWithFilter(r, colIndex)) cellWidth += 26;
           maxContentWidth = Math.max(maxContentWidth, cellWidth);
         }
       }
@@ -1434,12 +1564,19 @@ export class GridComponent implements OnInit, AfterViewInit, OnDestroy {
   onChartMouseDown(chart: ChartItem, event: MouseEvent): void {
     event.stopPropagation();
     this.state.selectedChartId.set(chart.id);
+    this.chartMoveSnapshot = this.state.getSnapshot();
     this.isDraggingChart = true;
     this.draggedChartId = chart.id;
     this.chartDragStartX = event.clientX;
     this.chartDragStartY = event.clientY;
     this.chartInitialX = chart.x;
     this.chartInitialY = chart.y;
+  }
+
+  deleteChartWithHistory(chartId: string, event: MouseEvent): void {
+    event.stopPropagation();
+    this.history.push(this.state.getSnapshot());
+    this.state.deleteChart(chartId);
   }
 
   readonly chartColors: string[] = [
